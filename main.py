@@ -1,7 +1,8 @@
+from ELT.save_alpha_vantage import AlphaVantageSaver
 from ELT.save_fred import FredSaver
 
 
-def main():
+def save_fred_data():
     saver = FredSaver()
 
     # --- Save / incrementally update all four components ---
@@ -34,5 +35,14 @@ def main():
     print("Idempotence check complete — no duplicates should have been added.")
 
 
+def save_alpha_vantage_data():
+    saver = AlphaVantageSaver()
+    saver.save_earnings(["AMD"])
+
+
+def main():
+    print("main")
+
+
 if __name__ == "__main__":
-    main()
+    save_alpha_vantage_data()
