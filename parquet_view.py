@@ -114,7 +114,7 @@ def list_files(
         console.print(f"[red]✖ Directory not found:[/red] {target}")
         raise typer.Exit(code=1)
 
-    files = sorted(target.glob("*.parquet"))
+    files = sorted(target.rglob("*.parquet"))
     if not files:
         console.print(f"[yellow]⚠ No parquet files found in[/yellow] {target}")
         raise typer.Exit()
@@ -126,7 +126,7 @@ def list_files(
         row_styles=["", "dim"],
     )
     table.add_column("#", justify="right", style="bold")
-    table.add_column("File Name", style="bright_green")
+    table.add_column("Path", style="bright_green")
     table.add_column("Size", justify="right", style="yellow")
     table.add_column("Modified", style="blue")
     table.add_column("Rows", justify="right", style="magenta")
@@ -143,9 +143,12 @@ def list_files(
         except Exception:
             rows, cols = "?", "?"
 
+        # Show relative path so subdirectories are visible
+        display_path = f.relative_to(target) if f.is_relative_to(target) else f.name
+
         table.add_row(
             str(idx),
-            f.name,
+            str(display_path),
             _file_size(f),
             _modified_time(f),
             f"{rows:,}" if isinstance(rows, int) else str(rows),
