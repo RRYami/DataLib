@@ -11,10 +11,16 @@ dependencies = [
     "polars>=1.40.1",
     "requests>=2.33.1",
     "rich>=15.0.0",
+    "typer>=0.25.1",
 ]
+
+[project.scripts]
+parquet-view = "parquet_view:app"
 
 [dependency-groups]
 dev = [
     "pyright>=1.1.409",
     "ruff>=0.15.12",
 ]
+
+
