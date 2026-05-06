@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "disable_existing_loggers": false,
+  "formatters": {
+    "standard": {
+      "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    },
+    "detailed": {
+      "format": "%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
+      "datefmt": "%Y-%m-%d %H:%M:%S%z"
+    },
+    "json": {
+      "()": "logger.logger.MyJsonFormatter",
+      "datefmt": "%Y-%m-%d %H:%M:%S",
+      "fmt_keys": {
+        "level": "levelname",
+        "timestamp": "asctime",
+        "logger": "name",
+        "message": "message",
+        "module": "module",
+        "function": "funcName",
+        "line": "lineno",
+        "thread": "threadName",
+        "process": "processName"
+      }
+    }
+  },
+  "handlers": {
+    "stdout": {
+      "class": "logging.StreamHandler",
+      "level": "INFO",
+      "formatter": "standard",
+      "stream": "ext://sys.stdout"
+    },
+    "stderr": {
+      "class": "logging.StreamHandler",
+      "level": "WARNING",
+      "formatter": "standard",
+      "stream": "ext://sys.stderr"
+    },
+    "file": {
+      "class": "logging.handlers.RotatingFileHandler",
+      "level": "DEBUG",
+      "formatter": "json",
+      "filename": "logs/app.log.jsonl",
+      "maxBytes": 5000000,
+      "backupCount": 3
+    },
+    "queue_handler": {
+      "class": "logging.handlers.QueueHandler",
+      "handlers": ["stdout", "file", "stderr"],
+      "respect_handler_level": true
+    }
+  },
+  "root": {
+    "level": "DEBUG",
+    "handlers": ["queue_handler"]
+  }
+}
