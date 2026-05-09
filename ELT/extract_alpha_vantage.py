@@ -9,6 +9,7 @@ import requests
 
 from get_api_keys import get_api_key
 from logger.logger import get_logger
+from utils.http import build_retry_session
 
 logger = get_logger(__name__)
 
@@ -197,7 +198,7 @@ class AlphaVantageExtractor:
     def __init__(self, api_key: str | None = None, calls_per_minute: int = 5) -> None:
         self.api_key = api_key or get_api_key("ALPHA_VANTAGE_KEY")
         self.rate_limiter = _RateLimiter(calls_per_minute)
-        self.session = requests.Session()
+        self.session = build_retry_session()
 
     # -- low-level ---------------------------------------------------------
 

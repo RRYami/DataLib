@@ -10,6 +10,7 @@ from pathlib import Path
 import polars as pl
 
 from logger.logger import get_logger
+from utils.validators import DataValidationError, run_validation_suite
 
 logger = get_logger(__name__)
 
@@ -83,6 +84,34 @@ class ParquetSaver:
         return sub
 
     # ------------------------------------------------------------------
+    # Validation hook
+    # ------------------------------------------------------------------
+
+    def _validate(
+        self,
+        df: pl.DataFrame,
+        context: str = "DataFrame",
+    ) -> None:
+        """Validate a DataFrame before it is persisted.
+
+        Subclasses may override this to apply dataset-specific rules.
+        The default implementation runs a lightweight suite:
+        not-empty, required columns (``date``, ``value``), and no
+        all-null critical columns.
+
+        Raises
+        ------
+        DataValidationError
+            If any check fails.
+        """
+        run_validation_suite(
+            df,
+            required_columns=["date"],
+            not_null_columns=["date"],
+            context=context,
+        )
+
+    # ------------------------------------------------------------------
     # Incremental helpers
     # ------------------------------------------------------------------
 
@@ -115,8 +144,14 @@ class ParquetSaver:
         fetch_fn,
         dedupe_keys: list[str],
         lookback_days: int = 7,
-    ) -> None:
-        """Save a dataset that goes into a single file."""
+    ) -> bool:
+        """Save a dataset that goes into a single file.
+
+        Returns
+        -------
+        bool
+            ``True`` if saved successfully.
+        """
         path = self.data_dir / filename
         existing = self._read_existing(path)
         start_date = self._determine_start_date(existing, lookback_days)
@@ -130,7 +165,7 @@ class ParquetSaver:
 
         if new_df is None or new_df.is_empty():
             logger.warning(f"No data fetched for {filename}")
-            return
+            return False
 
         if existing is not None:
             merged = merge_and_dedupe(existing, new_df, dedupe_keys)
@@ -138,7 +173,17 @@ class ParquetSaver:
             merged = new_df
 
         merged = merged.sort(dedupe_keys)
+        try:
+            self._validate(
+                merged,
+                context=f"{filename.replace('.parquet', '')} before write",
+            )
+        except DataValidationError as exc:
+            logger.error(f"Validation failed for {filename}: {exc}")
+            return False
+
         self._write_parquet(merged, path)
+        return True
 
     def _save_single_ticker(
         self,
@@ -146,7 +191,7 @@ class ParquetSaver:
         fetch_fn,
         sub_dir_name: str,
         dedupe_keys: list[str],
-    ) -> None:
+    ) -> bool:
         """Fetch one ticker, merge with its existing file, and write back.
 
         Parameters
@@ -159,6 +204,11 @@ class ParquetSaver:
             Sub-directory name (e.g. ``"daily_bars"``).
         dedupe_keys
             Columns used for deduplication.
+
+        Returns
+        -------
+        bool
+            ``True`` if the ticker was saved successfully.
         """
         path = self._sub_dir(sub_dir_name) / f"{ticker.upper()}.parquet"
         existing = self._read_existing(path)
@@ -167,11 +217,11 @@ class ParquetSaver:
             new_df = fetch_fn()
         except Exception as exc:
             logger.error(f"Failed to fetch {sub_dir_name} for {ticker}: {exc}")
-            return
+            return False
 
         if new_df is None or new_df.is_empty():
             logger.warning(f"No data returned for {ticker} {sub_dir_name}")
-            return
+            return False
 
         if existing is not None:
             merged = merge_and_dedupe(existing, new_df, dedupe_keys)
@@ -179,7 +229,17 @@ class ParquetSaver:
             merged = new_df
 
         merged = merged.sort(dedupe_keys)
+        try:
+            self._validate(
+                merged,
+                context=f"{sub_dir_name}/{ticker.upper()} before write",
+            )
+        except DataValidationError as exc:
+            logger.error(f"Validation failed for {ticker} {sub_dir_name}: {exc}")
+            return False
+
         self._write_parquet(merged, path)
+        return True
 
     def _save_per_country(
         self,
@@ -188,8 +248,15 @@ class ParquetSaver:
         sub_dir_name: str,
         dedupe_keys: list[str],
         lookback_days: int = 7,
-    ) -> None:
-        """Save a dataset where each country gets its own file."""
+    ) -> dict[str, bool]:
+        """Save a dataset where each country gets its own file.
+
+        Returns
+        -------
+        dict[str, bool]
+            Mapping of country code → success status.
+        """
+        results: dict[str, bool] = {}
         for country in countries:
             path = self._sub_dir(sub_dir_name) / f"{country.upper()}.parquet"
             existing = self._read_existing(path)
@@ -199,10 +266,12 @@ class ParquetSaver:
                 new_df = fetch_fn(country, start_date)
             except Exception as exc:
                 logger.error(f"Failed to fetch {sub_dir_name} for {country}: {exc}")
+                results[country] = False
                 continue
 
             if new_df is None or new_df.is_empty():
                 logger.warning(f"No data for {country} {sub_dir_name}")
+                results[country] = False
                 continue
 
             if existing is not None:
@@ -211,7 +280,19 @@ class ParquetSaver:
                 merged = new_df
 
             merged = merged.sort(dedupe_keys)
+            try:
+                self._validate(
+                    merged,
+                    context=f"{sub_dir_name}/{country.upper()} before write",
+                )
+            except DataValidationError as exc:
+                logger.error(f"Validation failed for {country} {sub_dir_name}: {exc}")
+                results[country] = False
+                continue
+
             self._write_parquet(merged, path)
+            results[country] = True
+        return results
 
     def _read_all_in_subdir(self, sub_dir_name: str) -> pl.DataFrame | None:
         """Read every ``.parquet`` in a sub-directory and concatenate."""

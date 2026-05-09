@@ -7,6 +7,7 @@ import polars as pl
 from ELT.base import ParquetSaver, merge_and_dedupe
 from ELT.extract_polygon import PolygonExtractor
 from logger.logger import get_logger
+from utils.results import SaveResult
 
 logger = get_logger(__name__)
 
@@ -34,39 +35,57 @@ class PolygonSaver(ParquetSaver):
         tickers: list[str],
         start_date: str,
         end_date: str,
-    ) -> None:
+    ) -> SaveResult:
         """Save / update daily OHLCV bars — one file per ticker."""
+        result = SaveResult()
         for ticker in tickers:
-            self._save_single_ticker(
+            ok = self._save_single_ticker(
                 ticker,
                 lambda t=ticker: self.extractor.get_daily_bars(t, start_date, end_date),
                 "daily_bars",
                 ["date"],
             )
+            if ok:
+                result.add_saved(ticker)
+            else:
+                result.add_failed(ticker, "fetch or validation failed")
+        return result
 
-    def save_ticker_details(self, tickers: list[str]) -> None:
+    def save_ticker_details(self, tickers: list[str]) -> SaveResult:
         """Save / update company details — one file per ticker."""
+        result = SaveResult()
         for ticker in tickers:
-            self._save_single_ticker(
+            ok = self._save_single_ticker(
                 ticker,
                 lambda t=ticker: self.extractor.get_ticker_details(t),
                 "ticker_details",
                 ["ticker"],
             )
+            if ok:
+                result.add_saved(ticker)
+            else:
+                result.add_failed(ticker, "fetch or validation failed")
+        return result
 
     def save_daily_open_close(
         self,
         tickers: list[str],
         date: str,
-    ) -> None:
+    ) -> SaveResult:
         """Save / update open/close snapshots — one file per ticker."""
+        result = SaveResult()
         for ticker in tickers:
-            self._save_single_ticker(
+            ok = self._save_single_ticker(
                 ticker,
                 lambda t=ticker: self.extractor.get_daily_open_close(t, date),
                 "daily_open_close",
                 ["date"],
             )
+            if ok:
+                result.add_saved(ticker)
+            else:
+                result.add_failed(ticker, "fetch or validation failed")
+        return result
 
     # ------------------------------------------------------------------
     # Public API — aggregate files
@@ -76,8 +95,9 @@ class PolygonSaver(ParquetSaver):
         self,
         market: str = "stocks",
         limit: int = 2_500,
-    ) -> None:
+    ) -> SaveResult:
         """Save / update the full ticker list for a market."""
+        result = SaveResult()
         path = self._sub_dir("ticker_list") / f"{market}.parquet"
         existing = self._read_existing(path)
 
@@ -85,11 +105,13 @@ class PolygonSaver(ParquetSaver):
             new_df = self.extractor.get_ticker_list(market=market, limit=limit)
         except Exception as exc:
             logger.error(f"Failed to fetch ticker list: {exc}")
-            return
+            result.add_failed("ticker_list", str(exc))
+            return result
 
         if new_df is None or new_df.is_empty():
             logger.warning("No ticker list data returned")
-            return
+            result.add_skipped("ticker_list")
+            return result
 
         if existing is not None:
             merged = merge_and_dedupe(existing, new_df, ["ticker"])
@@ -98,6 +120,8 @@ class PolygonSaver(ParquetSaver):
 
         merged = merged.sort("ticker")
         self._write_parquet(merged, path)
+        result.add_saved("ticker_list")
+        return result
 
     # ------------------------------------------------------------------
     # Batch operations
@@ -108,10 +132,15 @@ class PolygonSaver(ParquetSaver):
         tickers: list[str],
         start_date: str,
         end_date: str,
-    ) -> None:
+    ) -> SaveResult:
         """Run everything: ticker details + daily bars."""
-        self.save_ticker_details(tickers)
-        self.save_daily_bars(tickers, start_date, end_date)
+        details_result = self.save_ticker_details(tickers)
+        bars_result = self.save_daily_bars(tickers, start_date, end_date)
+        combined = SaveResult()
+        combined.saved = details_result.saved + bars_result.saved
+        combined.failed = details_result.failed + bars_result.failed
+        combined.skipped = details_result.skipped + bars_result.skipped
+        return combined
 
     # ------------------------------------------------------------------
     # Read helpers (per-ticker)

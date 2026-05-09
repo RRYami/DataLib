@@ -6,6 +6,7 @@ import requests
 
 from get_api_keys import get_api_key
 from logger.logger import get_logger
+from utils.http import build_retry_session
 
 logger = get_logger(__name__)
 
@@ -226,7 +227,7 @@ class FredExtractor:
                 file_type or "json",
                 limit or 100_000,
             )
-            with requests.Session() as session:
+            with build_retry_session() as session:
                 response = session.get(BASE_URL, params=params)
             response.raise_for_status()
             return response.json()
@@ -269,7 +270,7 @@ class FredExtractor:
         if observation_end:
             params_template["observation_end"] = observation_end
 
-        with requests.Session() as session:
+        with build_retry_session() as session:
             with ThreadPoolExecutor(max_workers=min(10, len(series_map))) as executor:
                 futures = {
                     executor.submit(

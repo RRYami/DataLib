@@ -10,6 +10,7 @@ from massive import RESTClient
 
 from get_api_keys import get_api_key
 from logger.logger import get_logger
+from utils.http import retry_call
 
 logger = get_logger(__name__)
 
@@ -92,9 +93,9 @@ class PolygonExtractor:
     # -- low-level ---------------------------------------------------------
 
     def _request(self, fn, *args: Any, **kwargs: Any) -> Any:
-        """Execute *fn* after enforcing the rate limit."""
+        """Execute *fn* after enforcing the rate limit, with retries."""
         self.rate_limiter.sleep_if_needed()
-        return fn(*args, **kwargs)
+        return retry_call(fn, *args, retries=3, backoff_factor=1.0, **kwargs)
 
     # -- ticker reference --------------------------------------------------
 

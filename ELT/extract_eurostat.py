@@ -8,6 +8,7 @@ import eurostat
 import polars as pl
 
 from logger.logger import get_logger
+from utils.http import retry_call
 
 logger = get_logger(__name__)
 
@@ -200,7 +201,13 @@ class EurostatExtractor:
         logger.info(f"Fetching Eurostat dataset: {dataset_code}")
 
         try:
-            raw = eurostat.get_data_df(dataset_code, filter_pars=filters or {})
+            raw = retry_call(
+                eurostat.get_data_df,
+                dataset_code,
+                retries=3,
+                backoff_factor=1.0,
+                filter_pars=filters or {},
+            )
         except Exception as exc:
             logger.error(f"Failed to fetch {dataset_code}: {exc}")
             raise

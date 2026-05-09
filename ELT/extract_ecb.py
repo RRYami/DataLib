@@ -8,6 +8,7 @@ import polars as pl
 from ecbdata import ecbdata
 
 from logger.logger import get_logger
+from utils.http import retry_call
 
 logger = get_logger(__name__)
 
@@ -166,7 +167,13 @@ class EcbExtractor:
                 kwargs["start"] = start
             if end is not None:
                 kwargs["end"] = end
-            raw = ecbdata.get_series(series_id, **kwargs)  # type: ignore[arg-type]
+            raw = retry_call(
+                ecbdata.get_series,
+                series_id,
+                retries=3,
+                backoff_factor=1.0,
+                **kwargs,  # type: ignore[arg-type]
+            )
         except Exception as exc:
             logger.error(f"Failed to fetch {series_id}: {exc}")
             raise

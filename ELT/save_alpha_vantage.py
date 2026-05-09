@@ -7,6 +7,7 @@ import polars as pl
 from ELT.base import ParquetSaver
 from ELT.extract_alpha_vantage import AlphaVantageExtractor
 from logger.logger import get_logger
+from utils.results import SaveResult
 
 logger = get_logger(__name__)
 
@@ -32,108 +33,171 @@ class AlphaVantageSaver(ParquetSaver):
     # Public API — fundamentals (per-ticker files)
     # ------------------------------------------------------------------
 
-    def save_income_statement(self, tickers: list[str]) -> None:
+    def save_income_statement(self, tickers: list[str]) -> SaveResult:
         """Save / update income statements — one file per ticker."""
+        result = SaveResult()
         for ticker in tickers:
-            self._save_single_ticker(
+            ok = self._save_single_ticker(
                 ticker,
                 lambda t=ticker: self.extractor.get_statement(t, "income_statement"),
                 "income_statement",
                 ["fiscal_date_ending", "report_type"],
             )
+            if ok:
+                result.add_saved(ticker)
+            else:
+                result.add_failed(ticker, "fetch or validation failed")
+        return result
 
-    def save_balance_sheet(self, tickers: list[str]) -> None:
+    def save_balance_sheet(self, tickers: list[str]) -> SaveResult:
         """Save / update balance sheets — one file per ticker."""
+        result = SaveResult()
         for ticker in tickers:
-            self._save_single_ticker(
+            ok = self._save_single_ticker(
                 ticker,
                 lambda t=ticker: self.extractor.get_statement(t, "balance_sheet"),
                 "balance_sheet",
                 ["fiscal_date_ending", "report_type"],
             )
+            if ok:
+                result.add_saved(ticker)
+            else:
+                result.add_failed(ticker, "fetch or validation failed")
+        return result
 
-    def save_cash_flow(self, tickers: list[str]) -> None:
+    def save_cash_flow(self, tickers: list[str]) -> SaveResult:
         """Save / update cash flow statements — one file per ticker."""
+        result = SaveResult()
         for ticker in tickers:
-            self._save_single_ticker(
+            ok = self._save_single_ticker(
                 ticker,
                 lambda t=ticker: self.extractor.get_statement(t, "cash_flow"),
                 "cash_flow",
                 ["fiscal_date_ending", "report_type"],
             )
+            if ok:
+                result.add_saved(ticker)
+            else:
+                result.add_failed(ticker, "fetch or validation failed")
+        return result
 
-    def save_earnings(self, tickers: list[str]) -> None:
+    def save_earnings(self, tickers: list[str]) -> SaveResult:
         """Save / update earnings — one file per ticker."""
+        result = SaveResult()
         for ticker in tickers:
-            self._save_single_ticker(
+            ok = self._save_single_ticker(
                 ticker,
                 lambda t=ticker: self.extractor.get_statement(t, "earnings"),
                 "earnings",
                 ["fiscal_date_ending", "report_type"],
             )
+            if ok:
+                result.add_saved(ticker)
+            else:
+                result.add_failed(ticker, "fetch or validation failed")
+        return result
 
-    def save_overview(self, tickers: list[str]) -> None:
+    def save_overview(self, tickers: list[str]) -> SaveResult:
         """Save / update company overviews — one file per ticker."""
+        result = SaveResult()
         for ticker in tickers:
-            self._save_single_ticker(
+            ok = self._save_single_ticker(
                 ticker,
                 lambda t=ticker: self.extractor.get_overview(t),
                 "overview",
                 ["ticker"],
             )
+            if ok:
+                result.add_saved(ticker)
+            else:
+                result.add_failed(ticker, "fetch or validation failed")
+        return result
 
     # ------------------------------------------------------------------
     # Public API — time series (per-ticker files)
     # ------------------------------------------------------------------
 
-    def save_daily_adjusted(self, tickers: list[str]) -> None:
+    def save_daily_adjusted(self, tickers: list[str]) -> SaveResult:
         """Save / update daily adjusted OHLCV — one file per ticker."""
+        result = SaveResult()
         for ticker in tickers:
-            self._save_single_ticker(
+            ok = self._save_single_ticker(
                 ticker,
                 lambda t=ticker: self.extractor.get_time_series(t, "daily_adjusted"),
                 "daily_adjusted",
                 ["date"],
             )
+            if ok:
+                result.add_saved(ticker)
+            else:
+                result.add_failed(ticker, "fetch or validation failed")
+        return result
 
-    def save_weekly_adjusted(self, tickers: list[str]) -> None:
+    def save_weekly_adjusted(self, tickers: list[str]) -> SaveResult:
         """Save / update weekly adjusted OHLCV — one file per ticker."""
+        result = SaveResult()
         for ticker in tickers:
-            self._save_single_ticker(
+            ok = self._save_single_ticker(
                 ticker,
                 lambda t=ticker: self.extractor.get_time_series(t, "weekly_adjusted"),
                 "weekly_adjusted",
                 ["date"],
             )
+            if ok:
+                result.add_saved(ticker)
+            else:
+                result.add_failed(ticker, "fetch or validation failed")
+        return result
 
-    def save_monthly_adjusted(self, tickers: list[str]) -> None:
+    def save_monthly_adjusted(self, tickers: list[str]) -> SaveResult:
         """Save / update monthly adjusted OHLCV — one file per ticker."""
+        result = SaveResult()
         for ticker in tickers:
-            self._save_single_ticker(
+            ok = self._save_single_ticker(
                 ticker,
                 lambda t=ticker: self.extractor.get_time_series(t, "monthly_adjusted"),
                 "monthly_adjusted",
                 ["date"],
             )
+            if ok:
+                result.add_saved(ticker)
+            else:
+                result.add_failed(ticker, "fetch or validation failed")
+        return result
 
     # ------------------------------------------------------------------
     # Batch operations
     # ------------------------------------------------------------------
 
-    def save_all_fundamentals(self, tickers: list[str]) -> None:
+    def save_all_fundamentals(self, tickers: list[str]) -> SaveResult:
         """Run all fundamentals + overview saves."""
-        self.save_income_statement(tickers)
-        self.save_balance_sheet(tickers)
-        self.save_cash_flow(tickers)
-        self.save_earnings(tickers)
-        self.save_overview(tickers)
+        combined = SaveResult()
+        for fn in [
+            self.save_income_statement,
+            self.save_balance_sheet,
+            self.save_cash_flow,
+            self.save_earnings,
+            self.save_overview,
+        ]:
+            res = fn(tickers)
+            combined.saved.extend(res.saved)
+            combined.failed.extend(res.failed)
+            combined.skipped.extend(res.skipped)
+        return combined
 
-    def save_all(self, tickers: list[str]) -> None:
+    def save_all(self, tickers: list[str]) -> SaveResult:
         """Run everything: fundamentals + all time-series intervals."""
-        self.save_all_fundamentals(tickers)
-        self.save_daily_adjusted(tickers)
-        self.save_weekly_adjusted(tickers)
-        self.save_monthly_adjusted(tickers)
+        combined = self.save_all_fundamentals(tickers)
+        for fn in [
+            self.save_daily_adjusted,
+            self.save_weekly_adjusted,
+            self.save_monthly_adjusted,
+        ]:
+            res = fn(tickers)
+            combined.saved.extend(res.saved)
+            combined.failed.extend(res.failed)
+            combined.skipped.extend(res.skipped)
+        return combined
 
     # ------------------------------------------------------------------
     # Read helpers (per-ticker)
