@@ -1,10 +1,11 @@
-"""Extract data from Polygon.io API for ELT pipeline."""
+from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
-from typing import Any, Union
+from datetime import date, datetime, timezone
+from typing import Any
 
+import polars as pl
 from massive import RESTClient
 
 from get_api_keys import get_api_key
@@ -14,485 +15,313 @@ setup_logging()
 logger = get_logger(__name__)
 
 
-class PolygonClient:
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+class _RateLimiter:
+    """Simple rate limiter enforcing a minimum interval between calls."""
+
+    def __init__(self, calls_per_minute: int) -> None:
+        self.min_interval = 60.0 / calls_per_minute
+        self.last_call: float | None = None
+
+    def sleep_if_needed(self) -> None:
+        if self.last_call is not None:
+            elapsed = time.monotonic() - self.last_call
+            if elapsed < self.min_interval:
+                sleep_time = self.min_interval - elapsed
+                logger.debug(f"Rate limit: sleeping {sleep_time:.2f}s")
+                time.sleep(sleep_time)
+        self.last_call = time.monotonic()
+
+
+def _ms_to_date(ts: int) -> date:
+    """Convert Polygon millisecond timestamp to a ``datetime.date``."""
+    return datetime.fromtimestamp(ts / 1000, tz=timezone.utc).date()
+
+
+def _flatten_obj(obj: Any) -> dict[str, Any]:
     """
-    Responsible for managing the Polygon API client connection.
+    Recursively flatten a Polygon SDK object into a plain dict.
 
-    Single Responsibility: Client initialization and lifecycle management.
+    Nested objects are JSON-serialised; ``None`` and primitives are kept
+    as-is so Polars can infer clean types.
     """
+    if obj is None:
+        return {}
 
-    def __init__(self, api_key: str):
-        """
-        Initialize Polygon REST client.
+    raw: dict[str, Any] = getattr(obj, "__dict__", {})
+    if not raw:
+        # Fallback for objects without __dict__
+        return {"value": str(obj)}
 
-        Args:
-            api_key: Polygon API key
-        """
-        self.client = RESTClient(api_key)
-        logger.info("Polygon API client initialized")
+    result: dict[str, Any] = {}
+    for k, v in raw.items():
+        if v is None or isinstance(v, (str, int, float, bool, list)):
+            result[k] = v
+        elif isinstance(v, dict):
+            result[k] = json.dumps(v)
+        else:
+            # Nested SDK object – try to flatten, otherwise stringify
+            try:
+                result[k] = json.dumps(v.__dict__)
+            except (AttributeError, TypeError):
+                result[k] = str(v)
+    return result
 
-    def get_client(self) -> RESTClient:
-        """Return the underlying REST client."""
-        return self.client
+
+# ---------------------------------------------------------------------------
+# Extractor
+# ---------------------------------------------------------------------------
 
 
-class TickerDetailsExtractor:
+class PolygonExtractor:
     """
-    Responsible for extracting ticker details from Polygon API.
+    Extract data from the Polygon.io API into tidy Polars DataFrames.
 
-    Single Responsibility: Ticker details extraction logic.
-    """
-
-    def __init__(self, client: RESTClient):
-        """
-        Initialize extractor with a Polygon client.
-
-        Args:
-            client: Initialized Polygon REST client
-        """
-        self.client = client
-
-    def extract(self, ticker: str, type: str = "stocks") -> dict[str, Any]:
-        """
-        Extract ticker details for a single ticker (equity or indices).
-
-        Args:
-            ticker: Stock ticker symbol (e.g., 'AAPL', 'MSFT')
-
-        Returns:
-            dict containing raw ticker details from the API
-
-        Raises:
-            Exception: If API request fails
-        """
-        logger.info(f"Extracting ticker details for: {ticker}")
-        match type.lower():
-            case "stocks":
-                try:
-                    details = self.client.get_ticker_details(ticker)
-                    data = details.__dict__.copy()
-                    logger.info(f"Successfully extracted data for {ticker}")
-                    logger.debug(f"Extracted fields: {list(data.keys())}")
-                except Exception as e:
-                    logger.error(f"Error extracting data for {ticker}: {e}")
-                    raise
-                return data
-            case "indices":
-                try:
-                    details = self.client.list_tickers(ticker=ticker, market="indices")
-                    data = details.__dict__.copy()
-                    logger.info(f"Successfully extracted data for {ticker}")
-                    logger.debug(f"Extracted fields: {list(data.keys())}")
-                except Exception as e:
-                    logger.error(f"Error extracting data for {ticker}: {e}")
-                    raise
-                return data
-            case _:
-                logger.error(f"Unsupported ticker type: {type}")
-                raise ValueError(f"Unsupported ticker type: {type}")
-
-
-class TickerListExtractor:
-    """
-    Responsible for extracting the list of available tickers from Polygon API.
-
-    Single Responsibility: Ticker list extraction logic.
+    Handles rate limiting (default 5 calls/min for the free tier) and
+    converts all responses into DataFrames with consistent metadata columns.
     """
 
-    def __init__(self, client: RESTClient):
+    def __init__(self, api_key: str | None = None, calls_per_minute: int = 5) -> None:
+        self.api_key = api_key or get_api_key("POLYGON_KEY")
+        self.rate_limiter = _RateLimiter(calls_per_minute)
+        self.client = RESTClient(self.api_key)
+
+    # -- low-level ---------------------------------------------------------
+
+    def _request(self, fn, *args: Any, **kwargs: Any) -> Any:
+        """Execute *fn* after enforcing the rate limit."""
+        self.rate_limiter.sleep_if_needed()
+        return fn(*args, **kwargs)
+
+    # -- ticker reference --------------------------------------------------
+
+    def get_ticker_details(self, ticker: str) -> pl.DataFrame:
         """
-        Initialize extractor with a Polygon client.
+        Fetch company details for a single ticker.
 
-        Args:
-            client: Initialized Polygon REST client
+        Returns a single-row DataFrame.
         """
-        self.client = client
+        batch_ts = datetime.now(timezone.utc)
+        logger.info(f"Fetching ticker details for {ticker}")
 
-    def extract(self, market: str = "indices") -> list[dict[str, Any]]:
-        """
-        Extract the list of available tickers for a given market.
+        details = self._request(self.client.get_ticker_details, ticker)
+        data = _flatten_obj(details)
+        data["ticker"] = ticker.upper()
+        data["source"] = "POLYGON"
+        data["last_fetched_at"] = batch_ts
 
-        Args:
-            market: Market type (e.g., 'stocks', 'indices')
+        df = pl.DataFrame([data])
+        logger.info(f"Fetched details for {ticker}")
+        return df
 
-        Returns:
-            List of dicts containing ticker details
-
-        Raises:
-            Exception: If API request fails
-        """
-        logger.info(f"Extracting ticker list for market: {market}")
-        try:
-            tickers = self.client.list_tickers(
-                market=market, order="asc", limit=500, sort="ticker"
-            )
-            data = []
-            max_requests = 5
-            max_tickers = max_requests * 500  # 2,500 tickers
-
-            for ticker in tickers:
-                data.append(ticker.__dict__.copy())
-
-                # Stop after reaching max tickers
-                if len(data) >= max_tickers:
-                    logger.info(
-                        f"Reached limit of {max_tickers} tickers ({max_requests} requests)"
-                    )
-                    break
-
-                # Add delay after each page (every 500 tickers)
-                # Free tier: 5 requests/min = 12 seconds between requests
-                if len(data) % 500 == 0 and len(data) < max_tickers:
-                    logger.info(
-                        f"Fetched {len(data)} tickers, pausing 12s for rate limit..."
-                    )
-                    time.sleep(12)
-
-            logger.info(
-                f"Successfully extracted {len(data)} tickers for market: {market}"
-            )
-            return data
-        except Exception as e:
-            logger.error(f"Error extracting ticker list for {market}: {e}")
-            raise
-
-
-class BatchTickerExtractor:
-    """
-    Responsible for orchestrating batch extraction of multiple tickers.
-
-    Single Responsibility: Batch processing and error handling for multiple tickers.
-    """
-
-    def __init__(self, extractor: TickerDetailsExtractor):
-        """
-        Initialize batch extractor.
-
-        Args:
-            extractor: Single ticker extractor instance
-        """
-        self.extractor = extractor
-
-    def extract(self, tickers: list[str]) -> dict[str, dict[str, Any]]:
-        """
-        Extract ticker details for multiple tickers.
-
-        Args:
-            tickers: List of ticker symbols
-
-        Returns:
-            dict mapping ticker symbols to their details
-        """
-        logger.info(f"Starting batch extraction for {len(tickers)} tickers")
-        results = {}
-
+    def get_ticker_details_batch(
+        self, tickers: list[str]
+    ) -> dict[str, pl.DataFrame | None]:
+        """Fetch details for multiple tickers."""
+        results: dict[str, pl.DataFrame | None] = {}
         for ticker in tickers:
             try:
-                results[ticker] = self.extractor.extract(ticker)
-            except Exception as e:
-                logger.warning(f"Skipping {ticker} due to error: {e}")
-                continue
-
-        logger.info(
-            f"Batch extraction complete: {len(results)}/{len(tickers)} successful"
-        )
+                results[ticker] = self.get_ticker_details(ticker)
+            except Exception as exc:
+                logger.error(f"Failed to fetch details for {ticker}: {exc}")
+                results[ticker] = None
         return results
 
-
-class PolygonPriceExtractor:
-    """
-    Responsible for extracting batch price data from Polygon API.
-
-    Single Responsibility: Batch price data extraction logic.
-    """
-
-    def __init__(self, client: RESTClient):
-        """
-        Initialize extractor with a Polygon client.
-
-        Args:
-            client: Initialized Polygon REST client
-        """
-        self.client = client
-
-    def extract_range(
+    def get_ticker_list(
         self,
-        tickers: Union[list[str], str],
+        market: str = "stocks",
+        limit: int = 2_500,
+    ) -> pl.DataFrame:
+        """
+        Fetch the list of available tickers for a market.
+
+        Parameters
+        ----------
+        market
+            Market type (``'stocks'``, ``'indices'``, etc.).
+        limit
+            Maximum tickers to retrieve.  Polygon pages at 500 per request.
+        """
+        batch_ts = datetime.now(timezone.utc)
+        logger.info(f"Fetching ticker list for market: {market}")
+
+        tickers = self._request(
+            self.client.list_tickers,
+            market=market,
+            order="asc",
+            limit=500,
+            sort="ticker",
+        )
+
+        data: list[dict[str, Any]] = []
+        page_size = 500
+        max_requests = (limit + page_size - 1) // page_size
+        max_tickers = max_requests * page_size
+
+        for ticker in tickers:
+            data.append(_flatten_obj(ticker))
+            if len(data) >= max_tickers:
+                logger.info(f"Reached limit of {max_tickers} tickers")
+                break
+            if len(data) % page_size == 0 and len(data) < max_tickers:
+                logger.info(
+                    f"Fetched {len(data)} tickers, pausing 12 s for rate limit..."
+                )
+                time.sleep(12)
+
+        if not data:
+            return pl.DataFrame()
+
+        df = pl.DataFrame(data)
+        df = df.with_columns(
+            pl.lit("POLYGON").alias("source"),
+            pl.lit(batch_ts).alias("last_fetched_at"),
+        )
+        logger.info(f"Fetched {len(df)} tickers for market: {market}")
+        return df
+
+    # -- aggregates (OHLCV) ------------------------------------------------
+
+    def get_daily_bars(
+        self,
+        ticker: str,
         start_date: str,
         end_date: str,
-        checkpoint_file: str = "data/extraction_checkpoint.json",
-    ) -> dict[str, Any]:
+    ) -> pl.DataFrame:
         """
-        Extract price data for multiple tickers between dates.
-        PS: with Polygon free tier, the maximum date range is 2 years.
-        Rate limit: 5 API calls per minute.
+        Fetch daily OHLCV bars for *ticker* between two dates.
 
-        Supports resuming from checkpoint if interrupted.
+        Parameters
+        ----------
+        ticker
+            Stock symbol.
+        start_date, end_date
+            Inclusive date bounds (``YYYY-MM-DD``).
 
-        Args:
-            tickers: List of stock ticker symbols (e.g., 'AAPL', 'MSFT')
-            start_date: Start date for extraction (YYYY-MM-DD)
-            end_date: End date for extraction (YYYY-MM-DD)
-            checkpoint_file: Path to save progress (default: data/extraction_checkpoint.json)
-
-        Returns:
-            dict mapping ticker symbols to their price data
-
-        Raises:
-            Exception: If API request fails
+        Returns
+        -------
+        polars.DataFrame
+            Columns: ``date, open, high, low, close, volume, vwap,
+            transactions, ticker, source, last_fetched_at``.
         """
+        batch_ts = datetime.now(timezone.utc)
         logger.info(
-            f"Extracting price data for tickers between {start_date} and {end_date}"
+            f"Fetching daily bars for {ticker} ({start_date} to {end_date})"
         )
 
-        if isinstance(tickers, str):
-            tickers = [tickers]
+        bars = self._request(
+            self.client.get_aggs,
+            ticker,
+            1,
+            "day",
+            start_date,
+            end_date,
+        )
 
-        # Load checkpoint if exists
-        checkpoint_data = self._load_checkpoint(checkpoint_file)
-        results = checkpoint_data.get("results", {})
-        processed_tickers = set(checkpoint_data.get("processed", []))
+        if not bars:
+            logger.warning(f"No bars returned for {ticker}")
+            return pl.DataFrame()
 
-        # Filter out already processed tickers
-        remaining_tickers = [t for t in tickers if t not in processed_tickers]
-
-        if processed_tickers:
-            logger.info(
-                f"Resuming: {len(processed_tickers)} tickers already processed, {len(remaining_tickers)} remaining"
+        rows: list[dict[str, Any]] = []
+        for bar in bars:
+            rows.append(
+                {
+                    "ticker": ticker.upper(),
+                    "date": _ms_to_date(bar.timestamp),
+                    "open": getattr(bar, "open", None),
+                    "high": getattr(bar, "high", None),
+                    "low": getattr(bar, "low", None),
+                    "close": getattr(bar, "close", None),
+                    "volume": getattr(bar, "volume", None),
+                    "vwap": getattr(bar, "vwap", None),
+                    "transactions": getattr(bar, "transactions", None),
+                    "source": "POLYGON",
+                    "last_fetched_at": batch_ts,
+                }
             )
 
-        # Rate limiting: 5 calls per minute
-        batch_size = 5
-        total_remaining = len(remaining_tickers)
+        df = pl.DataFrame(rows)
+        logger.info(f"Fetched {len(df)} bars for {ticker}")
+        return df
 
-        try:
-            for i in range(0, total_remaining, batch_size):
-                batch = remaining_tickers[i : i + batch_size]
-                batch_num = (i // batch_size) + 1
-                total_batches = (total_remaining + batch_size - 1) // batch_size
-
-                logger.info(
-                    f"Processing batch {batch_num}/{total_batches} ({len(batch)} tickers)"
-                )
-
-                for ticker in batch:
-                    max_retries = 3
-                    retry_delay = 15  # seconds
-
-                    for attempt in range(max_retries):
-                        try:
-                            bars = self.client.get_aggs(
-                                ticker,
-                                1,
-                                "day",
-                                start_date,
-                                end_date,
-                            )
-                            results[ticker] = [bar.__dict__ for bar in bars]
-                            processed_tickers.add(ticker)
-                            logger.info(
-                                f"Successfully extracted price data for {ticker}"
-                            )
-
-                            # Save checkpoint after each successful extraction
-                            self._save_checkpoint(
-                                checkpoint_file,
-                                results,
-                                list(processed_tickers),
-                            )
-                            break  # Success, exit retry loop
-
-                        except Exception as e:
-                            if attempt < max_retries - 1:
-                                logger.warning(
-                                    f"Error extracting {ticker} (attempt {attempt + 1}/{max_retries}): {e}"
-                                )
-                                logger.info(f"Retrying in {retry_delay} seconds...")
-                                time.sleep(retry_delay)
-                            else:
-                                logger.error(
-                                    f"Failed to extract {ticker} after {max_retries} attempts: {e}"
-                                )
-                                # Mark as processed to skip on next run
-                                processed_tickers.add(ticker)
-                                self._save_checkpoint(
-                                    checkpoint_file,
-                                    results,
-                                    list(processed_tickers),
-                                )
-
-                # Wait 60 seconds before next batch (unless this is the last batch)
-                if i + batch_size < total_remaining:
-                    logger.info("Rate limit: waiting 60 seconds before next batch...")
-                    time.sleep(60)
-
-            logger.info(
-                f"Extraction complete: {len(results)}/{len(tickers)} tickers successful"
-            )
-
-            # Clean up checkpoint file on successful completion
-            self._cleanup_checkpoint(checkpoint_file)
-
-        except KeyboardInterrupt:
-            logger.warning(
-                "Extraction interrupted by user. Progress saved to checkpoint."
-            )
-            raise
-        except Exception as e:
-            logger.error(f"Extraction failed: {e}. Progress saved to checkpoint.")
-            raise
-
-        return results
-
-    def _load_checkpoint(self, checkpoint_file: str) -> dict:
-        """Load checkpoint data from file."""
-        checkpoint_path = Path(checkpoint_file)
-        if checkpoint_path.exists():
-            try:
-                with open(checkpoint_path, "r") as f:
-                    data = json.load(f)
-                    logger.info(f"Loaded checkpoint from {checkpoint_file}")
-                    return data
-            except Exception as e:
-                logger.warning(f"Failed to load checkpoint: {e}")
-        return {"results": {}, "processed": []}
-
-    def _save_checkpoint(self, checkpoint_file: str, results: dict, processed: list):
-        """Save checkpoint data to file."""
-        checkpoint_path = Path(checkpoint_file)
-        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-
-        try:
-            with open(checkpoint_path, "w") as f:
-                json.dump(
-                    {
-                        "results": results,
-                        "processed": processed,
-                        "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    },
-                    f,
-                    indent=2,
-                )
-        except Exception as e:
-            logger.error(f"Failed to save checkpoint: {e}")
-
-    def _cleanup_checkpoint(self, checkpoint_file: str):
-        """Remove checkpoint file after successful completion."""
-        checkpoint_path = Path(checkpoint_file)
-        if checkpoint_path.exists():
-            try:
-                checkpoint_path.unlink()
-                logger.info(f"Checkpoint file {checkpoint_file} cleaned up")
-            except Exception as e:
-                logger.warning(f"Failed to cleanup checkpoint: {e}")
-
-    def extract_day(self, tickers: list[str], date: str) -> dict[str, Any]:
-        """
-        Extract price data for multiple tickers on a specific date.
-
-        Args:
-            tickers: List of stock ticker symbols (e.g., 'AAPL', 'MSFT')
-            date: Date for which to extract price data (YYYY-MM-DD)
-        Returns:
-            dict mapping ticker symbols to their price data
-        Raises:
-            Exception: If API request fails
-        """
-        logger.info(f"Extracting price data for tickers on {date}")
-        results = {}
+    def get_daily_bars_batch(
+        self,
+        tickers: list[str],
+        start_date: str,
+        end_date: str,
+    ) -> dict[str, pl.DataFrame | None]:
+        """Fetch daily bars for multiple tickers."""
+        results: dict[str, pl.DataFrame | None] = {}
         for ticker in tickers:
             try:
-                bars = self.client.get_daily_open_close_agg(
-                    ticker,
-                    date,
-                    adjusted=True,
+                results[ticker] = self.get_daily_bars(ticker, start_date, end_date)
+            except Exception as exc:
+                logger.error(
+                    f"Failed to fetch daily bars for {ticker}: {exc}"
                 )
-                logger.info(f"Successfully extracted price data for {ticker}")
-            except Exception as e:
-                logger.error(f"Error extracting price data for {ticker}: {e}")
-                continue
-                results[ticker] = bars.__dict__
+                results[ticker] = None
         return results
 
+    # -- daily open / close ------------------------------------------------
 
-class PolygonExtractorFactory:
-    """
-    Responsible for creating properly configured extractor instances.
-
-    Single Responsibility: Object creation and dependency injection.
-    """
-
-    @staticmethod
-    def create_ticker_extractor(
-        api_key: str | None = None,
-    ) -> TickerDetailsExtractor:
+    def get_daily_open_close(
+        self,
+        ticker: str,
+        date: str,
+    ) -> pl.DataFrame:
         """
-        Create a configured TickerDetailsExtractor.
+        Fetch open/close snapshot for *ticker* on a specific date.
 
-        Args:
-            api_key: Optional API key. If None, will load from environment.
-
-        Returns:
-            Configured TickerDetailsExtractor instance
+        Returns a single-row DataFrame.
         """
-        if api_key is None:
-            api_key = get_api_key()
+        batch_ts = datetime.now(timezone.utc)
+        logger.info(f"Fetching open/close for {ticker} on {date}")
 
-        polygon_client = PolygonClient(api_key)
-        return TickerDetailsExtractor(polygon_client.get_client())
-
-    @staticmethod
-    def create_ticker_list_extractor(
-        api_key: str | None = None,
-    ) -> TickerListExtractor:
-        """
-        Create a configured TickerListExtractor.
-
-        Args:
-            api_key: Optional API key. If None, will load from environment.
-
-        Returns:
-            Configured TickerListExtractor instance
-        """
-        if api_key is None:
-            api_key = get_api_key()
-
-        polygon_client = PolygonClient(api_key)
-        return TickerListExtractor(polygon_client.get_client())
-
-    @staticmethod
-    def create_batch_extractor(
-        api_key: str | None = None,
-    ) -> BatchTickerExtractor:
-        """
-        Create a configured BatchTickerExtractor.
-
-        Args:
-            api_key: Optional API key. If None, will load from environment.
-
-        Returns:
-            Configured BatchTickerExtractor instance
-        """
-        ticker_extractor: TickerDetailsExtractor = (
-            PolygonExtractorFactory.create_ticker_extractor(api_key)
+        agg = self._request(
+            self.client.get_daily_open_close_agg,
+            ticker,
+            date,
+            adjusted=True,
         )
-        return BatchTickerExtractor(ticker_extractor)
 
-    @staticmethod
-    def create_price_extractor(
-        api_key: str | None = None,
-    ) -> PolygonPriceExtractor:
-        """
-        Create a configured PriceExtractor.
+        df = pl.DataFrame(
+            [
+                {
+                    "ticker": ticker.upper(),
+                    "date": date,
+                    "open": getattr(agg, "open", None),
+                    "high": getattr(agg, "high", None),
+                    "low": getattr(agg, "low", None),
+                    "close": getattr(agg, "close", None),
+                    "volume": getattr(agg, "volume", None),
+                    "vwap": getattr(agg, "vwap", None),
+                    "after_hours": getattr(agg, "afterHours", None),
+                    "pre_market": getattr(agg, "preMarket", None),
+                    "source": "POLYGON",
+                    "last_fetched_at": batch_ts,
+                }
+            ]
+        )
+        logger.info(f"Fetched open/close for {ticker}")
+        return df
 
-        Args:
-            api_key: Optional API key. If None, will load from environment.
-
-        Returns:
-            Configured PriceExtractor instance
-        """
-        if api_key is None:
-            api_key = get_api_key()
-
-        polygon_client = PolygonClient(api_key)
-        return PolygonPriceExtractor(polygon_client.get_client())
+    def get_daily_open_close_batch(
+        self,
+        tickers: list[str],
+        date: str,
+    ) -> dict[str, pl.DataFrame | None]:
+        """Fetch open/close for multiple tickers on a specific date."""
+        results: dict[str, pl.DataFrame | None] = {}
+        for ticker in tickers:
+            try:
+                results[ticker] = self.get_daily_open_close(ticker, date)
+            except Exception as exc:
+                logger.error(
+                    f"Failed to fetch open/close for {ticker}: {exc}"
+                )
+                results[ticker] = None
+        return results

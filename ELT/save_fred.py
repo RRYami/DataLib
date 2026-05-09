@@ -119,7 +119,7 @@ class FredSaver:
 
     def __init__(
         self,
-        data_dir: str | os.PathLike = "data/fred",
+        data_dir: str | os.PathLike = "data/parquet/yield_curve_usa",
         api_key: str | None = None,
     ):
         self.data_dir = Path(data_dir)

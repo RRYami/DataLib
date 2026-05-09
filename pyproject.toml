@@ -6,9 +6,13 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "dotenv>=0.9.9",
+    "ecbdata>=0.1.1",
+    "eurostat>=1.1.1",
     "massive>=2.6.0",
+    "pandas>=3.0.2",
     "pendulum>=3.2.0",
     "polars>=1.40.1",
+    "pyarrow>=24.0.0",
     "requests>=2.33.1",
     "rich>=15.0.0",
     "typer>=0.25.1",

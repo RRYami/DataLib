@@ -14,8 +14,8 @@ from rich.table import Table
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ELT.extract_fred import FredExtractor
-from ELT.extract_polygon import PolygonExtractorFactory
+from ELT.extract_fred import TREASURY_CONSTANT_MATURITY, FredExtractor
+from ELT.save_polygon import PolygonSaver
 from logger.logger import get_logger
 
 # Setup
@@ -159,52 +159,30 @@ def download_price_data(args):
     console.print(f"[bold]Date Range:[/bold] {start_date} to {end_date}")
     console.print()
 
-    # Create extractors and loaders
+    # Create saver
     try:
-        price_extractor = PolygonExtractorFactory.create_price_extractor()
+        saver = PolygonSaver()
     except Exception as e:
-        console.print(f"[red]Error initializing extractors: {e}[/red]")
+        console.print(f"[red]Error initializing saver: {e}[/red]")
         sys.exit(1)
 
     # Download data
-    success_count = 0
-    failed_tickers = []
-    total_records = 0
-
     console.print("[bold]Processing...[/bold]")
 
-    for ticker in tickers:
-        try:
-            console.print(f"  [cyan]→[/cyan] Fetching {ticker}...", end=" ")
-
-            # Extract price data (rate limiting handled by extractor)
-            data = price_extractor.extract_range(
-                ticker,
-                start_date,
-                end_date,
-                checkpoint_file=f"data/.checkpoint_{ticker}.json",
-            )
-
-        except Exception as e:
-            console.print(f"[red]✗[/red] {str(e)[:50]}")
-            logger.warning(f"Failed to download {ticker}: {e}")
-            failed_tickers.append(ticker)
-            continue
-    console.print(f"[green]✓[/green] {ticker}")
-    success_count += 1
-    total_records += len(data)
+    try:
+        saver.save_daily_bars(tickers, start_date, end_date)
+        console.print(f"[green]✓[/green] Saved daily bars for {len(tickers)} tickers")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        logger.error(f"Price data download failed: {e}")
+        sys.exit(1)
 
     # Display summary
     console.print()
     summary_table = Table(title="Summary", show_header=False)
     summary_table.add_row("[bold]Total Tickers[/bold]", str(len(tickers)))
-    summary_table.add_row("[bold green]Successful[/bold green]", str(success_count))
-    summary_table.add_row("[bold red]Failed[/bold red]", str(len(failed_tickers)))
-    summary_table.add_row("[bold]Total Records[/bold]", str(total_records))
+    summary_table.add_row("[bold]Date Range[/bold]", f"{start_date} to {end_date}")
     console.print(summary_table)
-
-    if failed_tickers:
-        console.print(f"[yellow]Failed tickers: {', '.join(failed_tickers)}[/yellow]")
 
 
 def download_treasury_data(args):
@@ -226,18 +204,10 @@ def download_treasury_data(args):
         sys.exit(1)
 
     # Display parameters
-    maturities = [
-        "DGS1MO",
-        "DGS3MO",
-        "DGS6MO",
-        "DGS1",
-        "DGS2",
-        "DGS5",
-        "DGS10",
-        "DGS30",
-    ]
     console.print(f"[bold]Date Range:[/bold] {start_date} to {end_date}")
-    console.print(f"[bold]Series:[/bold] {', '.join(maturities)}")
+    console.print(
+        f"[bold]Series:[/bold] {', '.join(TREASURY_CONSTANT_MATURITY.keys())}"
+    )
     console.print()
 
     # Create extractor and loader
@@ -251,19 +221,15 @@ def download_treasury_data(args):
     console.print("[bold]Fetching data...[/bold]")
 
     try:
-        raw_data = extractor.get_series_observations(
-            series_id=maturities,
+        raw_data = extractor.get_constant_maturity_yields(
             observation_start=start_date,
             observation_end=end_date,
         )
 
-        if (
-            raw_data is not None
-            and isinstance(raw_data, pl.DataFrame)
-            and len(raw_data) > 0
-        ):
-            console.print(f"  [green]✓[/green] {len(maturities)} maturities fetched")
-            console.print(f"  [green]✓[/green] {len(raw_data)} business days")
+        if raw_data is not None and not raw_data.is_empty():
+            n_maturities = len(TREASURY_CONSTANT_MATURITY)
+            console.print(f"  [green]✓[/green] {n_maturities} maturities fetched")
+            console.print(f"  [green]✓[/green] {len(raw_data)} observations")
 
             # Display summary
             console.print()

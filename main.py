@@ -1,5 +1,6 @@
 from ELT.save_alpha_vantage import AlphaVantageSaver
 from ELT.save_fred import FredSaver
+from ELT.save_polygon import PolygonSaver
 
 
 def save_fred_data():
@@ -37,7 +38,12 @@ def save_fred_data():
 
 def save_alpha_vantage_data():
     saver = AlphaVantageSaver()
-    saver.save_earnings(["AMD"])
+    saver.save_all_fundamentals(["AMD"])
+
+
+def save_polygon_data():
+    saver = PolygonSaver()
+    saver.save_daily_bars(["NVDA"], "2010-01-01", "2026-05-06")
 
 
 def main():
@@ -45,4 +51,5 @@ def main():
 
 
 if __name__ == "__main__":
-    save_alpha_vantage_data()
+    # save_polygon_data()
+    save_fred_data()
