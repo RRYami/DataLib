@@ -31,24 +31,11 @@ def _merge_and_dedupe(
 class EurostatSaver:
     """
     Persist Eurostat data to Parquet files with idempotent, incremental updates.
-
-    Directory layout
-    ----------------
-    ::
-
-        data/eurostat/
-        ├── euro_area_yield_curve.parquet
-        ├── gov_bond_yields/
-        │   ├── BE.parquet
-        │   ├── DE.parquet
-        │   └── FR.parquet
-        ├── hicp.parquet
-        └── gdp.parquet
     """
 
     def __init__(
         self,
-        data_dir: str | os.PathLike = "data/eurostat",
+        data_dir: str | os.PathLike = "data/parquet/eurostat",
     ):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -101,7 +88,6 @@ class EurostatSaver:
         lookback_days: int = 7,
     ) -> None:
         """Save a dataset that goes into a single file."""
-        batch_ts = _now_utc()
         path = self.data_dir / filename
         existing = self._read_existing(path)
         start_date = self._determine_start_date(existing, lookback_days)
@@ -182,10 +168,23 @@ class EurostatSaver:
         lookback_days: int = 7,
     ) -> None:
         """Save / update 10Y government bond yields — one file per country."""
-        countries = countries or ["BE", "DE", "IE", "ES", "FR", "IT", "NL", "AT", "PT", "FI"]
+        countries = countries or [
+            "BE",
+            "DE",
+            "IE",
+            "ES",
+            "FR",
+            "IT",
+            "NL",
+            "AT",
+            "PT",
+            "FI",
+        ]
         self._save_per_country(
             countries,
-            lambda country, start: self.extractor.get_gov_bond_yields(countries=[country]),
+            lambda country, start: self.extractor.get_gov_bond_yields(
+                countries=[country]
+            ),
             "gov_bond_yields",
             ["date"],
             lookback_days,

@@ -1,6 +1,23 @@
 from ELT.save_alpha_vantage import AlphaVantageSaver
+from ELT.save_ecb import EcbSaver
+from ELT.save_eurostat import EurostatSaver
 from ELT.save_fred import FredSaver
 from ELT.save_polygon import PolygonSaver
+
+
+def save_ecb_data():
+    saver = EcbSaver()
+    saver.save_interest_rates()
+    saver.save_hicp()
+    saver.save_monetary_aggregates()
+
+
+def save_eurostat_data():
+    saver = EurostatSaver()
+    saver.save_euro_area_yield_curve()
+    saver.save_gov_bond_yields()
+    saver.save_hicp()
+    saver.save_gdp()
 
 
 def save_fred_data():
@@ -52,4 +69,6 @@ def main():
 
 if __name__ == "__main__":
     # save_polygon_data()
-    save_fred_data()
+    # save_fred_data()
+    save_ecb_data()
+    save_eurostat_data()

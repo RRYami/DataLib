@@ -44,7 +44,7 @@ class EcbSaver:
 
     def __init__(
         self,
-        data_dir: str | os.PathLike = "data/ecb",
+        data_dir: str | os.PathLike = "data/parquet/ecb",
     ):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -94,7 +94,6 @@ class EcbSaver:
         lookback_days: int = 7,
     ) -> None:
         """Generic save helper for a group of related series."""
-        batch_ts = _now_utc()
         existing = self._read_existing(filename)
         start_date = self._determine_start_date(existing, lookback_days)
 
