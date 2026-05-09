@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 
@@ -58,8 +60,17 @@ class ParquetSaver:
             logger.error(f"Failed to read existing {path}: {exc}")
             return None
 
-    def _write_parquet(self, df: pl.DataFrame, path: Path) -> None:
-        """Write *df* to *path* atomically via a temporary file."""
+    def _write_parquet(
+        self,
+        df: pl.DataFrame,
+        path: Path,
+        meta: dict[str, Any] | None = None,
+    ) -> None:
+        """Write *df* to *path* atomically via a temporary file.
+
+        Also writes a ``{filename}.meta.json`` sidecar with row count,
+        schema, and optional caller-provided metadata.
+        """
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp_path = tempfile.mkstemp(
             suffix=".parquet.tmp", dir=path.parent, prefix=path.stem + "_"
@@ -70,12 +81,38 @@ class ParquetSaver:
             df.write_parquet(tmp)
             os.replace(tmp, path)
             logger.info(f"Wrote {len(df):,} rows to {path}")
+            self._write_meta_sidecar(df, path, meta)
         except Exception as exc:
             logger.error(f"Failed to write {path}: {exc}")
             # Clean up temp file on failure
             if tmp.exists():
                 tmp.unlink()
             raise
+
+    def _write_meta_sidecar(
+        self,
+        df: pl.DataFrame,
+        parquet_path: Path,
+        extra_meta: dict[str, Any] | None = None,
+    ) -> None:
+        """Write a JSON sidecar next to the parquet file."""
+        meta = {
+            "parquet_file": str(parquet_path.name),
+            "row_count": len(df),
+            "column_count": len(df.columns),
+            "columns": [
+                {"name": c, "dtype": str(df.schema[c])} for c in df.columns
+            ],
+            "written_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if extra_meta:
+            meta.update(extra_meta)
+        sidecar = parquet_path.with_suffix(".parquet.meta.json")
+        try:
+            with open(sidecar, "w", encoding="utf-8") as fh:
+                json.dump(meta, fh, indent=2, default=str)
+        except Exception as exc:
+            logger.warning(f"Failed to write meta sidecar {sidecar}: {exc}")
 
     def _sub_dir(self, name: str) -> Path:
         """Return (and create) a subdirectory for a data type."""
