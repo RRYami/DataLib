@@ -26,6 +26,9 @@ parquet-view = "parquet_view:app"
 [dependency-groups]
 dev = [
     "pyright>=1.1.409",
+    "pytest>=8.0",
+    "pytest-mock>=3.14",
+    "responses>=0.26",
     "ruff>=0.15.12",
 ]
 

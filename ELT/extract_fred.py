@@ -167,7 +167,7 @@ def _merge_series(dfs: list[pl.DataFrame]) -> pl.DataFrame:
 
     combined = dfs[0]
     for df in dfs[1:]:
-        combined = combined.join(df, on="date", how="outer", coalesce=True)
+            combined = combined.join(df, on="date", how="full", coalesce=True)
     return combined.sort("date")
 
 
