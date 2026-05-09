@@ -5,8 +5,7 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-import polars as pl
-from dotenv import load_dotenv
+from config import settings  # noqa: F401  triggers .env load
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -16,16 +15,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ELT.extract_fred import TREASURY_CONSTANT_MATURITY, FredExtractor
 from ELT.save_polygon import PolygonSaver
-from logger.logger import get_logger
+from logger.logger import get_logger, setup_logging
 
-# Setup
-load_dotenv("./secret/.env")
 console = Console()
 logger = get_logger(__name__)
 
 
 def main():
     """Main entry point for the download CLI."""
+    setup_logging()
+
     parser = create_argument_parser()
 
     # Show help if no arguments

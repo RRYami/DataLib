@@ -1,8 +1,13 @@
+from config import settings  # noqa: F401  triggers .env load
+from logger.logger import get_logger, setup_logging
+
 from ELT.save_alpha_vantage import AlphaVantageSaver
 from ELT.save_ecb import EcbSaver
 from ELT.save_eurostat import EurostatSaver
 from ELT.save_fred import FredSaver
 from ELT.save_polygon import PolygonSaver
+
+logger = get_logger(__name__)
 
 
 def save_ecb_data():
@@ -68,7 +73,6 @@ def main():
 
 
 if __name__ == "__main__":
-    # save_polygon_data()
-    # save_fred_data()
+    setup_logging()
     save_ecb_data()
     save_eurostat_data()

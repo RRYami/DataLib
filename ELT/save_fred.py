@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import TypedDict
 
 import polars as pl
 
+from ELT.base import ParquetSaver, merge_and_dedupe
 from ELT.extract_fred import (
     GSW_INSTANTANEOUS_FORWARDS,
     GSW_TERM_PREMIUMS_FORWARD,
@@ -15,9 +15,8 @@ from ELT.extract_fred import (
     TREASURY_CONSTANT_MATURITY,
     FredExtractor,
 )
-from logger.logger import get_logger, setup_logging
+from logger.logger import get_logger
 
-setup_logging()
 logger = get_logger(__name__)
 
 
@@ -96,22 +95,7 @@ def _wide_to_long(
     return long
 
 
-def _merge_and_dedupe(
-    existing: pl.DataFrame,
-    new: pl.DataFrame,
-    unique_keys: list[str],
-) -> pl.DataFrame:
-    """
-    Concatenate existing and new data, then keep the most-recent
-    ``last_fetched_at`` for each unique key combination.
-    """
-    combined = pl.concat([existing, new], how="diagonal_relaxed")
-    # Sort so that within each unique key group, the newest batch is last.
-    combined = combined.sort([*unique_keys, "last_fetched_at"])
-    return combined.unique(subset=unique_keys, keep="last")
-
-
-class FredSaver:
+class FredSaver(ParquetSaver):
     """
     Persist FRED yield-curve data to Parquet files with idempotent,
     incremental updates.
@@ -122,53 +106,12 @@ class FredSaver:
         data_dir: str | os.PathLike = "data/parquet/yield_curve_usa",
         api_key: str | None = None,
     ):
-        self.data_dir = Path(data_dir)
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        super().__init__(data_dir)
         self.extractor = FredExtractor(api_key=api_key)
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
-
-    def _read_existing(self, filename: str) -> pl.DataFrame | None:
-        path = self.data_dir / filename
-        if not path.exists():
-            return None
-        try:
-            return pl.read_parquet(path)
-        except Exception as e:
-            logger.error(f"Failed to read existing {path}: {e}")
-            return None
-
-    def _write_parquet(self, df: pl.DataFrame, filename: str) -> None:
-        path = self.data_dir / filename
-        try:
-            df.write_parquet(path)
-            logger.info(f"Wrote {len(df):,} rows to {path}")
-        except Exception as e:
-            logger.error(f"Failed to write {path}: {e}")
-            raise
-
-    def _determine_start_date(
-        self,
-        existing: pl.DataFrame | None,
-        lookback_days: int,
-    ) -> str | None:
-        """
-        If data exists, return a start date ``lookback_days`` before the
-        latest observation so we catch any FRED revisions.
-        If no data exists, return ``None`` (fetch full history).
-        """
-        if existing is None or existing.is_empty():
-            return None
-        from datetime import date, timedelta
-
-        max_date = existing["date"].max()
-        # Polars .max() on a Date series returns date | None; we know it's
-        # non-None because the frame is non-empty.
-        assert isinstance(max_date, date)
-        lookback = max_date - timedelta(days=lookback_days)
-        return lookback.strftime("%Y-%m-%d")
 
     def _save_component(
         self,
@@ -178,7 +121,8 @@ class FredSaver:
         lookback_days: int,
     ) -> None:
         batch_ts = _now_utc()
-        existing = self._read_existing(filename)
+        path = self.data_dir / filename
+        existing = self._read_existing(path)
         start_date = self._determine_start_date(existing, lookback_days)
 
         logger.info(
@@ -196,14 +140,14 @@ class FredSaver:
         new_long = _wide_to_long(wide, component_label, mapping, batch_ts)
 
         if existing is not None:
-            merged = _merge_and_dedupe(
+            merged = merge_and_dedupe(
                 existing, new_long, ["date", "tenor", "fred_series_id"]
             )
         else:
             merged = new_long
 
         merged = merged.sort(["date", "tenor", "fred_series_id"])
-        self._write_parquet(merged, filename)
+        self._write_parquet(merged, path)
 
     # ------------------------------------------------------------------
     # Public API
@@ -245,7 +189,8 @@ class FredSaver:
         """
         batch_ts = _now_utc()
         filename = "gsw_term_premiums.parquet"
-        existing = self._read_existing(filename)
+        path = self.data_dir / filename
+        existing = self._read_existing(path)
         start_date = self._determine_start_date(existing, lookback_days)
 
         logger.info(
@@ -278,14 +223,14 @@ class FredSaver:
         new_long = pl.concat([spot_long, fwd_long], how="diagonal_relaxed")
 
         if existing is not None:
-            merged = _merge_and_dedupe(
+            merged = merge_and_dedupe(
                 existing, new_long, ["date", "tenor", "fred_series_id"]
             )
         else:
             merged = new_long
 
         merged = merged.sort(["date", "tenor", "fred_series_id"])
-        self._write_parquet(merged, filename)
+        self._write_parquet(merged, path)
 
     def save_all(self, lookback_days: int = 7) -> None:
         """Run all four save methods. Safe to call daily."""

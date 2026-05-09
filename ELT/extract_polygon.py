@@ -9,9 +9,8 @@ import polars as pl
 from massive import RESTClient
 
 from get_api_keys import get_api_key
-from logger.logger import get_logger, setup_logging
+from logger.logger import get_logger
 
-setup_logging()
 logger = get_logger(__name__)
 
 

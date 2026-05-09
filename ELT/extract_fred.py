@@ -5,9 +5,8 @@ import polars as pl
 import requests
 
 from get_api_keys import get_api_key
-from logger.logger import get_logger, setup_logging
+from logger.logger import get_logger
 
-setup_logging()
 logger = get_logger(__name__)
 
 BASE_URL = "https://api.stlouisfed.org/fred/series/observations"

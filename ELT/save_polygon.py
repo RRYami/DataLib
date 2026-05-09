@@ -1,37 +1,17 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
-from pathlib import Path
 
 import polars as pl
 
+from ELT.base import ParquetSaver, merge_and_dedupe
 from ELT.extract_polygon import PolygonExtractor
-from logger.logger import get_logger, setup_logging
+from logger.logger import get_logger
 
-setup_logging()
 logger = get_logger(__name__)
 
 
-def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _merge_and_dedupe(
-    existing: pl.DataFrame,
-    new: pl.DataFrame,
-    unique_keys: list[str],
-) -> pl.DataFrame:
-    """
-    Concatenate *existing* and *new*, then keep the most-recent
-    ``last_fetched_at`` for each unique key combination.
-    """
-    combined = pl.concat([existing, new], how="diagonal_relaxed")
-    combined = combined.sort([*unique_keys, "last_fetched_at"])
-    return combined.unique(subset=unique_keys, keep="last")
-
-
-class PolygonSaver:
+class PolygonSaver(ParquetSaver):
     """
     Persist Polygon.io data to per-ticker Parquet files with idempotent,
     incremental updates.
@@ -42,80 +22,8 @@ class PolygonSaver:
         data_dir: str | os.PathLike = "data/parquet",
         api_key: str | None = None,
     ):
-        self.data_dir = Path(data_dir)
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        super().__init__(data_dir)
         self.extractor = PolygonExtractor(api_key=api_key)
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def _sub_dir(self, name: str) -> Path:
-        """Return (and create) a subdirectory for a data type."""
-        sub = self.data_dir / name
-        sub.mkdir(parents=True, exist_ok=True)
-        return sub
-
-    def _read_existing(self, path: Path) -> pl.DataFrame | None:
-        if not path.exists():
-            return None
-        try:
-            return pl.read_parquet(path)
-        except Exception as exc:
-            logger.error(f"Failed to read existing {path}: {exc}")
-            return None
-
-    def _write_parquet(self, df: pl.DataFrame, path: Path) -> None:
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            df.write_parquet(path)
-            logger.info(f"Wrote {len(df):,} rows to {path}")
-        except Exception as exc:
-            logger.error(f"Failed to write {path}: {exc}")
-            raise
-
-    def _save_single_ticker(
-        self,
-        ticker: str,
-        fetch_fn,
-        sub_dir_name: str,
-        dedupe_keys: list[str],
-    ) -> None:
-        """
-        Fetch one ticker, merge with its existing file, and write back.
-
-        Parameters
-        ----------
-        ticker
-            Stock symbol.
-        fetch_fn
-            Callable that returns a ``pl.DataFrame``.
-        sub_dir_name
-            Sub-directory name (e.g. ``"daily_bars"``).
-        dedupe_keys
-            Columns used for deduplication (``last_fetched_at`` is appended
-            automatically in ``_merge_and_dedupe``).
-        """
-        path = self._sub_dir(sub_dir_name) / f"{ticker.upper()}.parquet"
-        existing = self._read_existing(path)
-
-        try:
-            new_df = fetch_fn()
-        except Exception as exc:
-            logger.error(f"Failed to fetch {sub_dir_name} for {ticker}: {exc}")
-            return
-
-        if new_df is None or new_df.is_empty():
-            logger.warning(f"No data returned for {ticker} {sub_dir_name}")
-            return
-
-        if existing is not None:
-            merged = _merge_and_dedupe(existing, new_df, dedupe_keys)
-        else:
-            merged = new_df
-
-        merged = merged.sort(dedupe_keys)
-        self._write_parquet(merged, path)
 
     # ------------------------------------------------------------------
     # Public API — per-ticker files
@@ -184,7 +92,7 @@ class PolygonSaver:
             return
 
         if existing is not None:
-            merged = _merge_and_dedupe(existing, new_df, ["ticker"])
+            merged = merge_and_dedupe(existing, new_df, ["ticker"])
         else:
             merged = new_df
 
@@ -238,12 +146,3 @@ class PolygonSaver:
 
     def read_all_daily_open_close(self) -> pl.DataFrame | None:
         return self._read_all_in_subdir("daily_open_close")
-
-    def _read_all_in_subdir(self, sub_dir_name: str) -> pl.DataFrame | None:
-        """Read every ``.parquet`` in a sub-directory and concatenate."""
-        sub = self._sub_dir(sub_dir_name)
-        files = sorted(sub.glob("*.parquet"))
-        if not files:
-            return None
-        dfs = [pl.read_parquet(f) for f in files]
-        return pl.concat(dfs, how="diagonal_relaxed")

@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import time
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 import polars as pl
 from ecbdata import ecbdata
 
-from logger.logger import get_logger, setup_logging
+from logger.logger import get_logger
 
-setup_logging()
 logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------

@@ -7,9 +7,8 @@ from typing import Any
 import eurostat
 import polars as pl
 
-from logger.logger import get_logger, setup_logging
+from logger.logger import get_logger
 
-setup_logging()
 logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------

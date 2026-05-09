@@ -1,34 +1,17 @@
 from __future__ import annotations
 
 import os
-from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
 
 import polars as pl
 
+from ELT.base import ParquetSaver
 from ELT.extract_ecb import EcbExtractor
-from logger.logger import get_logger, setup_logging
+from logger.logger import get_logger
 
-setup_logging()
 logger = get_logger(__name__)
 
 
-def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _merge_and_dedupe(
-    existing: pl.DataFrame,
-    new: pl.DataFrame,
-    unique_keys: list[str],
-) -> pl.DataFrame:
-    """Concatenate and keep the most-recent ``last_fetched_at``."""
-    combined = pl.concat([existing, new], how="diagonal_relaxed")
-    combined = combined.sort([*unique_keys, "last_fetched_at"])
-    return combined.unique(subset=unique_keys, keep="last")
-
-
-class EcbSaver:
+class EcbSaver(ParquetSaver):
     """
     Persist ECB data to Parquet files with idempotent, incremental updates.
 
@@ -46,45 +29,8 @@ class EcbSaver:
         self,
         data_dir: str | os.PathLike = "data/parquet/ecb",
     ):
-        self.data_dir = Path(data_dir)
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        super().__init__(data_dir)
         self.extractor = EcbExtractor()
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def _read_existing(self, filename: str) -> pl.DataFrame | None:
-        path = self.data_dir / filename
-        if not path.exists():
-            return None
-        try:
-            return pl.read_parquet(path)
-        except Exception as exc:
-            logger.error(f"Failed to read existing {path}: {exc}")
-            return None
-
-    def _write_parquet(self, df: pl.DataFrame, filename: str) -> None:
-        path = self.data_dir / filename
-        try:
-            df.write_parquet(path)
-            logger.info(f"Wrote {len(df):,} rows to {path}")
-        except Exception as exc:
-            logger.error(f"Failed to write {path}: {exc}")
-            raise
-
-    def _determine_start_date(
-        self,
-        existing: pl.DataFrame | None,
-        lookback_days: int,
-    ) -> str | None:
-        """Return a start date lookback_days before the latest observation."""
-        if existing is None or existing.is_empty():
-            return None
-        max_date = existing["date"].max()
-        assert isinstance(max_date, date)
-        lookback = max_date - timedelta(days=lookback_days)
-        return lookback.strftime("%Y-%m-%d")
 
     def _save_series_group(
         self,
@@ -94,7 +40,8 @@ class EcbSaver:
         lookback_days: int = 7,
     ) -> None:
         """Generic save helper for a group of related series."""
-        existing = self._read_existing(filename)
+        path = self.data_dir / filename
+        existing = self._read_existing(path)
         start_date = self._determine_start_date(existing, lookback_days)
 
         logger.info(
@@ -109,12 +56,13 @@ class EcbSaver:
             return
 
         if existing is not None:
-            merged = _merge_and_dedupe(existing, new_df, dedupe_keys)
+            from ELT.base import merge_and_dedupe
+            merged = merge_and_dedupe(existing, new_df, dedupe_keys)
         else:
             merged = new_df
 
         merged = merged.sort(dedupe_keys)
-        self._write_parquet(merged, filename)
+        self._write_parquet(merged, path)
 
     # ------------------------------------------------------------------
     # Public API
@@ -159,12 +107,12 @@ class EcbSaver:
 
     def read_interest_rates(self) -> pl.DataFrame | None:
         path = self.data_dir / "interest_rates.parquet"
-        return pl.read_parquet(path) if path.exists() else None
+        return self._read_existing(path)
 
     def read_hicp(self) -> pl.DataFrame | None:
         path = self.data_dir / "hicp.parquet"
-        return pl.read_parquet(path) if path.exists() else None
+        return self._read_existing(path)
 
     def read_monetary_aggregates(self) -> pl.DataFrame | None:
         path = self.data_dir / "monetary_aggregates.parquet"
-        return pl.read_parquet(path) if path.exists() else None
+        return self._read_existing(path)
