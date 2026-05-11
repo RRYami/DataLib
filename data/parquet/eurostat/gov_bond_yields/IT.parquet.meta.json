@@ -1,0 +1,48 @@
+{
+  "parquet_file": "IT.parquet",
+  "row_count": 94,
+  "column_count": 10,
+  "columns": [
+    {
+      "name": "freq",
+      "dtype": "String"
+    },
+    {
+      "name": "int_rt",
+      "dtype": "String"
+    },
+    {
+      "name": "geo\\TIME_PERIOD",
+      "dtype": "String"
+    },
+    {
+      "name": "date",
+      "dtype": "Date"
+    },
+    {
+      "name": "value",
+      "dtype": "Float64"
+    },
+    {
+      "name": "indicator",
+      "dtype": "String"
+    },
+    {
+      "name": "source",
+      "dtype": "String"
+    },
+    {
+      "name": "last_fetched_at",
+      "dtype": "Datetime(time_unit='us', time_zone='UTC')"
+    },
+    {
+      "name": "country",
+      "dtype": "String"
+    },
+    {
+      "name": "maturity",
+      "dtype": "String"
+    }
+  ],
+  "written_at": "2026-05-10T00:05:40.500097+00:00"
+}

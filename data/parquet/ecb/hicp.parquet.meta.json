@@ -1,0 +1,32 @@
+{
+  "parquet_file": "hicp.parquet",
+  "row_count": 348,
+  "column_count": 6,
+  "columns": [
+    {
+      "name": "date",
+      "dtype": "Date"
+    },
+    {
+      "name": "value",
+      "dtype": "Float64"
+    },
+    {
+      "name": "series_label",
+      "dtype": "String"
+    },
+    {
+      "name": "series_id",
+      "dtype": "String"
+    },
+    {
+      "name": "source",
+      "dtype": "String"
+    },
+    {
+      "name": "last_fetched_at",
+      "dtype": "Datetime(time_unit='us', time_zone='UTC')"
+    }
+  ],
+  "written_at": "2026-05-10T00:05:23.995693+00:00"
+}

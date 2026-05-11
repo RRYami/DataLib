@@ -1,0 +1,36 @@
+{
+  "parquet_file": "gsw_forward_rates.parquet",
+  "row_count": 94790,
+  "column_count": 7,
+  "columns": [
+    {
+      "name": "date",
+      "dtype": "Date"
+    },
+    {
+      "name": "tenor",
+      "dtype": "String"
+    },
+    {
+      "name": "value",
+      "dtype": "Float64"
+    },
+    {
+      "name": "fred_series_id",
+      "dtype": "String"
+    },
+    {
+      "name": "component",
+      "dtype": "String"
+    },
+    {
+      "name": "source",
+      "dtype": "String"
+    },
+    {
+      "name": "last_fetched_at",
+      "dtype": "Datetime(time_unit='us', time_zone='UTC')"
+    }
+  ],
+  "written_at": "2026-05-10T00:05:57.731632+00:00"
+}

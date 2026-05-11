@@ -1,0 +1,52 @@
+{
+  "parquet_file": "hicp.parquet",
+  "row_count": 2160,
+  "column_count": 11,
+  "columns": [
+    {
+      "name": "freq",
+      "dtype": "String"
+    },
+    {
+      "name": "unit",
+      "dtype": "String"
+    },
+    {
+      "name": "coicop",
+      "dtype": "String"
+    },
+    {
+      "name": "geo\\TIME_PERIOD",
+      "dtype": "String"
+    },
+    {
+      "name": "date",
+      "dtype": "Date"
+    },
+    {
+      "name": "value",
+      "dtype": "Float64"
+    },
+    {
+      "name": "indicator",
+      "dtype": "String"
+    },
+    {
+      "name": "source",
+      "dtype": "String"
+    },
+    {
+      "name": "last_fetched_at",
+      "dtype": "Datetime(time_unit='us', time_zone='UTC')"
+    },
+    {
+      "name": "country",
+      "dtype": "String"
+    },
+    {
+      "name": "item",
+      "dtype": "String"
+    }
+  ],
+  "written_at": "2026-05-10T00:05:50.528816+00:00"
+}

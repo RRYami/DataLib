@@ -1,0 +1,56 @@
+{
+  "parquet_file": "euro_area_yield_curve.parquet",
+  "row_count": 1820,
+  "column_count": 12,
+  "columns": [
+    {
+      "name": "freq",
+      "dtype": "String"
+    },
+    {
+      "name": "yld_curv",
+      "dtype": "String"
+    },
+    {
+      "name": "bonds",
+      "dtype": "String"
+    },
+    {
+      "name": "maturity",
+      "dtype": "String"
+    },
+    {
+      "name": "geo\\TIME_PERIOD",
+      "dtype": "String"
+    },
+    {
+      "name": "date",
+      "dtype": "Date"
+    },
+    {
+      "name": "value",
+      "dtype": "Float64"
+    },
+    {
+      "name": "indicator",
+      "dtype": "String"
+    },
+    {
+      "name": "source",
+      "dtype": "String"
+    },
+    {
+      "name": "last_fetched_at",
+      "dtype": "Datetime(time_unit='us', time_zone='UTC')"
+    },
+    {
+      "name": "curve_type",
+      "dtype": "String"
+    },
+    {
+      "name": "bond_type",
+      "dtype": "String"
+    }
+  ],
+  "written_at": "2026-05-10T00:05:34.480144+00:00"
+}
