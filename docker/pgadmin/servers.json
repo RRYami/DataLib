@@ -1,0 +1,19 @@
+{
+    "Servers": {
+        "1": {
+            "Name": "DataDownloader Postgres",
+            "Group": "Financial Data",
+            "Host": "postgres",
+            "Port": 5432,
+            "MaintenanceDB": "financial_data",
+            "Username": "datadownloader",
+            "SSLMode": "prefer",
+            "PassFile": "",
+            "Role": "",
+            "Timeout": 0,
+            "UseSSHTunnel": 0,
+            "TunnelPort": "22",
+            "TunnelAuthentication": 0
+        }
+    }
+}

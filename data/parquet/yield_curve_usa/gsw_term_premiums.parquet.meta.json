@@ -1,6 +1,6 @@
 {
   "parquet_file": "gsw_term_premiums.parquet",
-  "row_count": 189580,
+  "row_count": 189680,
   "column_count": 7,
   "columns": [
     {
@@ -32,5 +32,5 @@
       "dtype": "Datetime(time_unit='us', time_zone='UTC')"
     }
   ],
-  "written_at": "2026-05-10T00:05:58.453802+00:00"
+  "written_at": "2026-05-18T21:13:43.491430+00:00"
 }

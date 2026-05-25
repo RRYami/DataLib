@@ -1,0 +1,56 @@
+{
+  "parquet_file": "NVDA.parquet",
+  "row_count": 136,
+  "column_count": 12,
+  "columns": [
+    {
+      "name": "ticker",
+      "dtype": "String"
+    },
+    {
+      "name": "report_type",
+      "dtype": "String"
+    },
+    {
+      "name": "fiscal_date_ending",
+      "dtype": "Date"
+    },
+    {
+      "name": "reported_currency",
+      "dtype": "String"
+    },
+    {
+      "name": "source",
+      "dtype": "String"
+    },
+    {
+      "name": "last_fetched_at",
+      "dtype": "Datetime(time_unit='us', time_zone='UTC')"
+    },
+    {
+      "name": "reported_eps",
+      "dtype": "Float64"
+    },
+    {
+      "name": "reported_date",
+      "dtype": "String"
+    },
+    {
+      "name": "estimated_eps",
+      "dtype": "Float64"
+    },
+    {
+      "name": "surprise",
+      "dtype": "Float64"
+    },
+    {
+      "name": "surprise_percentage",
+      "dtype": "Float64"
+    },
+    {
+      "name": "report_time",
+      "dtype": "String"
+    }
+  ],
+  "written_at": "2026-05-18T21:36:04.267134+00:00"
+}

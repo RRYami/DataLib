@@ -1,0 +1,52 @@
+{
+  "parquet_file": "META.parquet",
+  "row_count": 488,
+  "column_count": 11,
+  "columns": [
+    {
+      "name": "ticker",
+      "dtype": "String"
+    },
+    {
+      "name": "date",
+      "dtype": "Date"
+    },
+    {
+      "name": "open",
+      "dtype": "Float64"
+    },
+    {
+      "name": "high",
+      "dtype": "Float64"
+    },
+    {
+      "name": "low",
+      "dtype": "Float64"
+    },
+    {
+      "name": "close",
+      "dtype": "Float64"
+    },
+    {
+      "name": "volume",
+      "dtype": "Float64"
+    },
+    {
+      "name": "vwap",
+      "dtype": "Float64"
+    },
+    {
+      "name": "transactions",
+      "dtype": "Int64"
+    },
+    {
+      "name": "source",
+      "dtype": "String"
+    },
+    {
+      "name": "last_fetched_at",
+      "dtype": "Datetime(time_unit='us', time_zone='UTC')"
+    }
+  ],
+  "written_at": "2026-05-20T19:52:44.414604+00:00"
+}

@@ -1,6 +1,6 @@
 {
   "parquet_file": "gsw_zero_coupon.parquet",
-  "row_count": 94790,
+  "row_count": 94840,
   "column_count": 7,
   "columns": [
     {
@@ -32,5 +32,5 @@
       "dtype": "Datetime(time_unit='us', time_zone='UTC')"
     }
   ],
-  "written_at": "2026-05-10T00:05:57.397307+00:00"
+  "written_at": "2026-05-18T21:13:41.951524+00:00"
 }

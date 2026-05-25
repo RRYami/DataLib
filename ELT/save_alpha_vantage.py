@@ -29,6 +29,10 @@ class AlphaVantageSaver(ParquetSaver):
         super().__init__(data_dir)
         self.extractor = AlphaVantageExtractor(api_key=api_key)
 
+    def _validate(self, df: pl.DataFrame, context: str = "DataFrame") -> None:
+        if df.is_empty():
+            raise ValueError(f"{context} is empty")
+
     # ------------------------------------------------------------------
     # Public API — fundamentals (per-ticker files)
     # ------------------------------------------------------------------

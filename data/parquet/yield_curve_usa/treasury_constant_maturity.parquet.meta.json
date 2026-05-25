@@ -1,6 +1,6 @@
 {
   "parquet_file": "treasury_constant_maturity.parquet",
-  "row_count": 184668,
+  "row_count": 184734,
   "column_count": 7,
   "columns": [
     {
@@ -32,5 +32,5 @@
       "dtype": "Datetime(time_unit='us', time_zone='UTC')"
     }
   ],
-  "written_at": "2026-05-10T00:05:57.108519+00:00"
+  "written_at": "2026-05-18T21:13:41.527969+00:00"
 }

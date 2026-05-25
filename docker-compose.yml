@@ -1,0 +1,71 @@
+version: "3.8"
+
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: docker/db/Dockerfile
+    container_name: datadownloader_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-datadownloader}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-datadownloader123}
+      POSTGRES_DB: ${POSTGRES_DB:-financial_data}
+      # Tune TimescaleDB for financial time-series workloads
+      TS_TUNE_MEMORY: ${TS_TUNE_MEMORY:-2GB}
+      TS_TUNE_NUM_CPUS: ${TS_TUNE_NUM_CPUS:-2}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./data/parquet:/parquet:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_preload_libraries=timescaledb"
+      - "-c"
+      - "timescaledb.telemetry_level=basic"
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: datadownloader_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@datadownloader.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  loader:
+    build:
+      context: .
+      dockerfile: docker/loader/Dockerfile
+    container_name: datadownloader_loader
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-datadownloader}:${POSTGRES_PASSWORD:-datadownloader123}@postgres:5432/${POSTGRES_DB:-financial_data}
+    volumes:
+      - ./data/parquet:/parquet:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - loader
+
+volumes:
+  postgres_data:
+  pgadmin_data:
