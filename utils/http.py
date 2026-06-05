@@ -6,6 +6,7 @@ import time
 from typing import Any, Callable
 
 import requests
+from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 
@@ -45,7 +46,7 @@ def build_retry_session(
         allowed_methods=allowed_methods,
         raise_on_status=False,
     )
-    adapter = requests.adapters.HTTPAdapter(max_retries=retry_strategy)
+    adapter = HTTPAdapter(max_retries=retry_strategy)
 
     session = requests.Session()
     session.mount("https://", adapter)
@@ -95,4 +96,5 @@ def retry_call(
             if attempt < retries:
                 sleep_time = backoff_factor * (2 ** attempt)
                 time.sleep(sleep_time)
-    raise last_exc  # type: ignore[misc]
+    assert last_exc is not None
+    raise last_exc

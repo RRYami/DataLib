@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 import responses
+from polars import DataFrame
 
 from ELT.extract_fred import BASE_URL as FRED_BASE_URL, FredExtractor
 from utils.http import retry_call
@@ -66,6 +67,7 @@ class TestFredExtractor:
             observation_start="2024-01-01",
             observation_end="2024-01-02",
         )
+        assert isinstance(df, DataFrame)
         assert df.shape == (2, 3)  # date, 2Y, 10Y
         assert "2Y" in df.columns
         assert "10Y" in df.columns
