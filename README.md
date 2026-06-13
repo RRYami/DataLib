@@ -25,7 +25,7 @@ Built with **Polars** for fast DataFrame operations, **Parquet** for efficient c
 
 ## Features
 
-- **Multi-source extraction**: FRED (US Treasury yields), ECB (interest rates, HICP, monetary aggregates), Eurostat (yield curves, GDP, HICP), Polygon.io (OHLCV bars, ticker details), Alpha Vantage (fundamentals, time series)
+- **Multi-source extraction**: FRED (US Treasury yields), ECB (interest rates, HICP, monetary aggregates), Eurostat (yield curves, GDP, HICP), Polygon.io (OHLCV bars, ticker details), Alpha Vantage (fundamentals, time series), Yahoo Finance (option-chain snapshots)
 - **Incremental, idempotent updates**: Only fetches new or revised data using a configurable lookback window
 - **Atomic Parquet writes**: Temp-file + `os.replace()` ensures you never get a corrupt Parquet file, even if the process crashes mid-write
 - **Automatic HTTP retries**: Exponential backoff for transient failures (503, 504, 429, etc.)
@@ -147,6 +147,9 @@ Exit code is `0` on full success, `1` if any task failed (ideal for cron).
 # Download daily OHLCV bars for tickers
 python -m ELT.download_cli price AAPL,MSFT,GOOGL 2024-01-01 2024-12-31
 
+# Download option-chain snapshots
+python -m ELT.download_cli options AAPL,MSFT,SPY
+
 # Download Treasury yields from FRED
 python -m ELT.download_cli treasury 2024-01-01 2024-12-31
 
@@ -213,6 +216,7 @@ print(result.to_dict())
 | **Eurostat** | Euro area yields, gov bond yields, HICP, GDP | `data/parquet/eurostat/**/*.parquet` | Monthly/Quarterly |
 | **Polygon** | Daily OHLCV bars, ticker details | `data/parquet/daily_bars/{TICKER}.parquet` | Daily |
 | **Alpha Vantage** | Income statements, balance sheets, cash flow, earnings, overview | `data/parquet/{statement}/{TICKER}.parquet` | Quarterly |
+| **Yahoo Finance** | Option-chain snapshots (calls/puts per expiry) | `data/parquet/options/{TICKER}.parquet` | Intraday |
 
 ---
 
@@ -224,8 +228,8 @@ DataDownloader/
 │   └── __init__.py
 ├── ELT/
 │   ├── base.py             # ParquetSaver base class (I/O, dedupe, validation)
-│   ├── extract_*.py        # One extractor per data source (5 files)
-│   ├── save_*.py           # One saver per data source (5 files)
+│   ├── extract_*.py        # One extractor per data source (6 files)
+│   ├── save_*.py           # One saver per data source (6 files)
 │   ├── download_cli.py     # Typer CLI for on-demand downloads
 │   └── __init__.py
 ├── logger/

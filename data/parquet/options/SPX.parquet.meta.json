@@ -1,0 +1,96 @@
+{
+  "parquet_file": "^SPX.parquet",
+  "row_count": 18813,
+  "column_count": 22,
+  "columns": [
+    {
+      "name": "underlying",
+      "dtype": "String"
+    },
+    {
+      "name": "type",
+      "dtype": "String"
+    },
+    {
+      "name": "expiry",
+      "dtype": "Date"
+    },
+    {
+      "name": "contract_symbol",
+      "dtype": "String"
+    },
+    {
+      "name": "strike",
+      "dtype": "Decimal(precision=18, scale=6)"
+    },
+    {
+      "name": "currency",
+      "dtype": "String"
+    },
+    {
+      "name": "last_price",
+      "dtype": "Decimal(precision=18, scale=6)"
+    },
+    {
+      "name": "bid",
+      "dtype": "Decimal(precision=18, scale=6)"
+    },
+    {
+      "name": "ask",
+      "dtype": "Decimal(precision=18, scale=6)"
+    },
+    {
+      "name": "change",
+      "dtype": "Decimal(precision=18, scale=6)"
+    },
+    {
+      "name": "percent_change",
+      "dtype": "Float64"
+    },
+    {
+      "name": "volume",
+      "dtype": "Int64"
+    },
+    {
+      "name": "open_interest",
+      "dtype": "Int64"
+    },
+    {
+      "name": "implied_volatility",
+      "dtype": "Float64"
+    },
+    {
+      "name": "in_the_money",
+      "dtype": "Boolean"
+    },
+    {
+      "name": "contract_size",
+      "dtype": "String"
+    },
+    {
+      "name": "last_trade_date",
+      "dtype": "Datetime(time_unit='us', time_zone='UTC')"
+    },
+    {
+      "name": "underlying_price",
+      "dtype": "Decimal(precision=18, scale=6)"
+    },
+    {
+      "name": "snapshot_ts",
+      "dtype": "Datetime(time_unit='us', time_zone='UTC')"
+    },
+    {
+      "name": "snapshot_date",
+      "dtype": "Date"
+    },
+    {
+      "name": "source",
+      "dtype": "String"
+    },
+    {
+      "name": "last_fetched_at",
+      "dtype": "Datetime(time_unit='us', time_zone='UTC')"
+    }
+  ],
+  "written_at": "2026-06-13T13:05:05.070066+00:00"
+}

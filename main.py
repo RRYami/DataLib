@@ -6,6 +6,7 @@ from ELT.save_ecb import EcbSaver
 from ELT.save_eurostat import EurostatSaver
 from ELT.save_fred import FredSaver
 from ELT.save_polygon import PolygonSaver
+from ELT.save_yfinance import YFinanceSaver
 from logger.logger import get_logger, setup_logging
 from orchestrator import Pipeline
 
@@ -44,6 +45,16 @@ def build_default_polygon_pipeline() -> Pipeline:
     return pipeline
 
 
+def build_default_yfinance_pipeline() -> Pipeline:
+    """Build the standard options-chain pipeline."""
+    pipeline = Pipeline()
+    pipeline.add_task(
+        "yfinance_options",
+        lambda: YFinanceSaver().save_option_chains(),
+    )
+    return pipeline
+
+
 def run_yield_pipeline() -> None:
     setup_logging()
     pipeline = build_default_yield_pipeline()
@@ -65,6 +76,15 @@ def run_alpha_vantage_pipeline() -> None:
 def run_polygon_pipeline() -> None:
     setup_logging()
     pipeline = build_default_polygon_pipeline()
+    result = pipeline.run()
+    print(result.to_dict())
+    if not result.ok:
+        raise SystemExit(1)
+
+
+def run_yfinance_pipeline() -> None:
+    setup_logging()
+    pipeline = build_default_yfinance_pipeline()
     result = pipeline.run()
     print(result.to_dict())
     if not result.ok:

@@ -16,6 +16,8 @@ from .extract_ecb import EcbExtractor
 from .save_ecb import EcbSaver
 from .extract_eurostat import EurostatExtractor
 from .save_eurostat import EurostatSaver
+from .extract_yfinance import YFinanceExtractor
+from .save_yfinance import YFinanceSaver
 
 __all__ = [
     "FredExtractor",
@@ -28,6 +30,8 @@ __all__ = [
     "EcbSaver",
     "EurostatExtractor",
     "EurostatSaver",
+    "YFinanceExtractor",
+    "YFinanceSaver",
     "TREASURY_CONSTANT_MATURITY",
     "GSW_ZERO_COUPON_YIELDS",
     "GSW_INSTANTANEOUS_FORWARDS",

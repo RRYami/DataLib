@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     eurostat_rate_limit: int = 60
     polygon_rate_limit: int = 5
     alpha_vantage_rate_limit: int = 5
+    yfinance_rate_limit: int = 30
 
     # ------------------------------------------------------------------
     # API keys (loaded from .env)

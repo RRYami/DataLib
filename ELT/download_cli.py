@@ -19,6 +19,7 @@ from rich.table import Table
 
 from ELT.extract_fred import TREASURY_CONSTANT_MATURITY, FredExtractor
 from ELT.save_polygon import PolygonSaver
+from ELT.save_yfinance import YFinanceSaver
 from logger.logger import get_logger, setup_logging
 
 app = typer.Typer(
@@ -184,6 +185,71 @@ def download_treasury(
         console.print(f"[red]Error: {exc}[/red]")
         logger.error(f"Treasury data download failed: {exc}")
         raise typer.Exit(code=1)
+
+
+# ─── Options command ────────────────────────────────────────────────────────
+
+
+def _parse_expiries(expiries_str: str) -> list[str] | None:
+    if not expiries_str or expiries_str.upper() == "ALL":
+        return None
+    return [e.strip() for e in expiries_str.split(",") if e.strip()]
+
+
+@app.command("options")
+def download_options(
+    tickers: Annotated[
+        str,
+        typer.Argument(
+            help="Ticker symbol(s) – comma-separated, no spaces (e.g. AAPL,MSFT). "
+            "Defaults to AAPL,MSFT,NVDA,SPY."
+        ),
+    ] = "",
+    expiries: Annotated[
+        str,
+        typer.Argument(
+            help="Option expiry date(s) – comma-separated YYYY-MM-DD, or 'ALL' (default)"
+        ),
+    ] = "ALL",
+) -> None:
+    """Download Yahoo Finance option-chain snapshots."""
+    console.print(Panel.fit("[bold cyan]Downloading Option Chain Data[/bold cyan]"))
+
+    parsed_tickers = _parse_tickers(tickers)
+    parsed_expiries = _parse_expiries(expiries)
+
+    if tickers and not parsed_tickers:
+        console.print("[red]Error: No valid tickers provided[/red]")
+        raise typer.Exit(code=1)
+
+    saver = YFinanceSaver(calls_per_minute=settings.yfinance_rate_limit)
+    tickers_to_run = parsed_tickers or saver.DEFAULT_TICKERS
+
+    console.print(f"[bold]Tickers:[/bold] {', '.join(tickers_to_run)}")
+    if parsed_expiries:
+        console.print(f"[bold]Expiries:[/bold] {', '.join(parsed_expiries)}")
+    else:
+        console.print("[bold]Expiries:[/bold] ALL available")
+    console.print()
+
+    console.print("[bold]Processing...[/bold]")
+    result = saver.save_option_chains(tickers_to_run, parsed_expiries)
+
+    if result.ok:
+        console.print(
+            f"[green]✓[/green] Saved option chains for {len(result.saved)} tickers"
+        )
+    else:
+        for item, reason in result.failed:
+            console.print(f"[yellow]⚠ {item} failed:[/yellow] {reason}")
+
+    console.print()
+    summary = Table(title="Summary", show_header=False)
+    summary.add_row("[bold]Total Tickers[/bold]", str(len(tickers_to_run)))
+    summary.add_row("[bold]Saved[/bold]", str(len(result.saved)))
+    summary.add_row("[bold]Failed[/bold]", str(len(result.failed)))
+    summary.add_row("[bold]Skipped[/bold]", str(len(result.skipped)))
+    console.print(summary)
 
 
 if __name__ == "__main__":
