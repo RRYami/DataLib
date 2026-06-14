@@ -1,6 +1,6 @@
 {
   "parquet_file": "AAPL.parquet",
-  "row_count": 2723,
+  "row_count": 2793,
   "column_count": 22,
   "columns": [
     {
@@ -92,5 +92,5 @@
       "dtype": "Datetime(time_unit='us', time_zone='UTC')"
     }
   ],
-  "written_at": "2026-06-13T13:02:22.737606+00:00"
+  "written_at": "2026-06-13T13:26:42.749563+00:00"
 }
