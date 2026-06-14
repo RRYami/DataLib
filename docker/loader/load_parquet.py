@@ -8,7 +8,8 @@ import sys
 from pathlib import Path
 
 import polars as pl
-from sqlalchemy import create_engine, text
+from sqlalchemy import Column, MetaData, Table, create_engine, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -116,6 +117,80 @@ def count_rows(engine, table_name: str) -> int:
     with engine.connect() as conn:
         result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
         return result[0] if result else 0
+
+
+# ---------------------------------------------------------------------------
+# YFinance option-chain upsert (no truncate; preserve history)
+# ---------------------------------------------------------------------------
+
+# yfinance_options PK: (underlying, expiry, type, contract_symbol, snapshot_ts)
+_YF_OPTIONS_PK = ["underlying", "expiry", "type", "contract_symbol", "snapshot_ts"]
+
+
+def _df_to_rows(df: pl.DataFrame) -> list[dict]:
+    """Convert a Polars DataFrame into a list of dicts ready for SQLAlchemy core.
+
+    Naive datetimes are rejected — all timestamps must already carry UTC tzinfo.
+    """
+    rows: list[dict] = []
+    for tup in df.iter_rows(named=True):
+        row: dict = {}
+        for k, v in tup.items():
+            if v is None:
+                row[k] = None
+            else:
+                row[k] = v
+        rows.append(row)
+    return rows
+
+
+def upsert_yfinance_options(df: pl.DataFrame, engine) -> int:
+    """Upsert option-chain rows into ``yfinance_options``.
+
+    Uses ``INSERT ... ON CONFLICT (pk) DO UPDATE`` so historical snapshots
+    are preserved and a re-run simply refreshes the latest snapshot per
+    (underlying, expiry, type, contract_symbol, snapshot_ts).
+    """
+    if df.is_empty():
+        print("  [SKIP] yfinance_options: empty DataFrame")
+        return 0
+
+    db_cols = get_db_columns(engine, "yfinance_options")
+    if not db_cols:
+        print("  [WARN] yfinance_options: table not found in database")
+        return 0
+
+    available_cols = [c for c in db_cols if c in df.columns]
+    if not available_cols:
+        print("  [SKIP] yfinance_options: no matching columns")
+        return 0
+
+    df = df.select(available_cols)
+    print(f"  (matched {len(available_cols)}/{len(db_cols)} columns)")
+
+    rows = _df_to_rows(df)
+    if not rows:
+        return 0
+
+    update_cols = [c for c in available_cols if c not in _YF_OPTIONS_PK]
+
+    yf_table = Table(
+        "yfinance_options",
+        MetaData(),
+        *[Column(c) for c in available_cols],
+    )
+    stmt = pg_insert(yf_table)
+    if update_cols:
+        stmt = stmt.on_conflict_do_update(
+            index_elements=_YF_OPTIONS_PK,
+            set_={c: stmt.excluded[c] for c in update_cols},
+        )
+    else:
+        stmt = stmt.on_conflict_do_nothing(index_elements=_YF_OPTIONS_PK)
+
+    with engine.begin() as conn:
+        conn.execute(stmt, rows)
+    return len(rows)
 
 
 def main() -> int:
@@ -263,6 +338,29 @@ def main() -> int:
     else:
         print("[ALPHA VANTAGE] overview directory not found, skipping")
 
+    # --- Yahoo Finance Option Chains ---
+    # Per-ticker parquet files; UPSERT (no truncate) so historical
+    # snapshots accumulate across runs.
+    yf_dir = base_dir / "options"
+    if yf_dir.exists():
+        files = sorted(yf_dir.glob("*.parquet"))
+        if files:
+            print(f"[YFINANCE] Upserting option chains from {len(files)} ticker files...")
+            total_upserted = 0
+            for f in files:
+                print(f"  [YFINANCE] {f.name}...")
+                df = pl.read_parquet(f)
+                rows = upsert_yfinance_options(df, engine)
+                total_upserted += rows
+                print(f"    → {rows:,} rows upserted")
+            total_rows += total_upserted
+            total_tables += 1
+            print(f"  → {total_upserted:,} total rows across {len(files)} tickers")
+        else:
+            print("[YFINANCE] options/ directory is empty, skipping")
+    else:
+        print("[YFINANCE] options directory not found, skipping")
+
     # --- Summary ---
     print()
     print("=" * 60)
@@ -278,6 +376,7 @@ def main() -> int:
         "ecb_monetary_aggregates", "eurostat_yield_curve",
         "eurostat_hicp", "eurostat_gdp", "market_data_daily",
         "fundamentals_income_stmt", "fundamentals_overview",
+        "yfinance_options",
     ]
     for table in all_tables:
         try:

@@ -216,6 +216,44 @@ CREATE TABLE IF NOT EXISTS fundamentals_overview (
 );
 
 -- ============================================================
+-- 11. Yahoo Finance Option-Chain Snapshots
+-- Hypertable keyed on snapshot_ts (microsecond UTC).
+-- Row grain: (underlying, expiry, type, contract_symbol, snapshot_ts)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS yfinance_options (
+    underlying            VARCHAR(20) NOT NULL,
+    type                  VARCHAR(4)  NOT NULL,
+    expiry                DATE        NOT NULL,
+    contract_symbol       VARCHAR(30) NOT NULL,
+    strike                NUMERIC(18, 6) NOT NULL,
+    currency              VARCHAR(10),
+    last_price            NUMERIC(18, 6),
+    bid                   NUMERIC(18, 6),
+    ask                   NUMERIC(18, 6),
+    change                NUMERIC(18, 6),
+    percent_change        DOUBLE PRECISION,
+    volume                BIGINT,
+    open_interest         BIGINT,
+    implied_volatility    DOUBLE PRECISION,
+    in_the_money          BOOLEAN,
+    contract_size         VARCHAR(20),
+    last_trade_date       TIMESTAMPTZ,
+    underlying_price      NUMERIC(18, 6),
+    snapshot_ts           TIMESTAMPTZ NOT NULL,
+    snapshot_date         DATE        NOT NULL,
+    source                VARCHAR(20) DEFAULT 'YFINANCE',
+    last_fetched_at       TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (underlying, expiry, type, contract_symbol, snapshot_ts)
+);
+
+SELECT create_hypertable(
+    'yfinance_options',
+    'snapshot_ts',
+    chunk_time_interval => INTERVAL '1 day',
+    if_not_exists => TRUE
+);
+
+-- ============================================================
 -- Verification: list all hypertables
 -- ============================================================
 DO $$

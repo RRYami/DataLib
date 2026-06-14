@@ -97,3 +97,18 @@ SELECT add_compression_policy(
     INTERVAL '1 year',
     if_not_exists => TRUE
 );
+
+-- Yahoo Finance option-chain snapshots: compress chunks older than 7 days
+-- (option chains refresh intraday, so daily chunks are a natural unit and
+--  compressing older ones is a big win — same contract repeats across days).
+ALTER TABLE yfinance_options SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'underlying, type',
+    timescaledb.compress_orderby = 'snapshot_ts DESC'
+);
+
+SELECT add_compression_policy(
+    'yfinance_options',
+    INTERVAL '7 days',
+    if_not_exists => TRUE
+);

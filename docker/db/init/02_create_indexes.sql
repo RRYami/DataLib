@@ -24,3 +24,11 @@ CREATE INDEX IF NOT EXISTS idx_market_ticker ON market_data_daily(ticker);
 -- Audit trail indexes (useful for incremental syncs)
 CREATE INDEX IF NOT EXISTS idx_fred_fetched ON fred_yield_curves(last_fetched_at DESC);
 CREATE INDEX IF NOT EXISTS idx_market_fetched ON market_data_daily(last_fetched_at DESC);
+
+-- Yahoo Finance option-chain indexes
+CREATE INDEX IF NOT EXISTS idx_yfopt_underlying        ON yfinance_options(underlying);
+CREATE INDEX IF NOT EXISTS idx_yfopt_expiry            ON yfinance_options(expiry);
+CREATE INDEX IF NOT EXISTS idx_yfopt_contract          ON yfinance_options(contract_symbol);
+CREATE INDEX IF NOT EXISTS idx_yfopt_underlying_type   ON yfinance_options(underlying, type);
+CREATE INDEX IF NOT EXISTS idx_yfopt_snapshot_date     ON yfinance_options(snapshot_date);
+CREATE INDEX IF NOT EXISTS idx_yfopt_fetched           ON yfinance_options(last_fetched_at DESC);

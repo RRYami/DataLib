@@ -38,8 +38,16 @@ SELECT add_retention_policy(
 
 -- Eurostat: Keep 10 years
 SELECT add_retention_policy(
-    'eurostat_yield_curve',
+    'eurostat_gdp',
     INTERVAL '10 years',
+    if_not_exists => TRUE
+);
+
+-- Yahoo Finance option-chain snapshots: keep 5 years of intraday
+-- quote history; older snapshots become low-signal.
+SELECT add_retention_policy(
+    'yfinance_options',
+    INTERVAL '5 years',
     if_not_exists => TRUE
 );
 
